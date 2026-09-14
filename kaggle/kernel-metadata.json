@@ -1,0 +1,13 @@
+{
+  "id": "USERNAME/fast-chess-label-and-train",
+  "title": "Fast Chess Label And Train",
+  "code_file": "fast_chess_label_and_train.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": ["USERNAME/fast-chess-positions"],
+  "competition_sources": [],
+  "kernel_sources": []
+}

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/*.py": {
+      "includeFiles": "{fastchess/**,model/**}",
+      "maxDuration": 30,
+      "memory": 1024
+    }
+  }
+}

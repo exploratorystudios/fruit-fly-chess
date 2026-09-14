@@ -1,0 +1,14 @@
+{
+  "name": "calibrated 500k",
+  "description": "781-128-32-1 evaluator, 104,257 parameters. Trained on 500,000 positions labelled by Stockfish at 50,000 nodes each, with the learned correction scaled to 0.5.",
+  "parameters": 104257,
+  "architecture": [
+    781,
+    128,
+    32,
+    1
+  ],
+  "correctionScale": 0.5,
+  "sha256": "73ba378f64384ee1f594c36da570f82991a9b5438db10c62da8f897736bcd74d",
+  "result": "9 wins, 0 draws, 1 loss against Stockfish 16 at UCI_Elo 1320, 60+0.6"
+}

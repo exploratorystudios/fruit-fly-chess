@@ -1,0 +1,12 @@
+# Only the engine, the weights and the page are needed to serve the site.
+games/
+data/
+runs/
+web/
+kaggle/
+tests/
+.venv/
+*.pgn
+*.log
+reply*.txt
+kaggle-fix.txt

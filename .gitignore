@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.pyc
+.vercel/
+
+# Generated locally, far too large for the repo (the PGN alone is 1.9 GB).
+data/
+runs/
+web/
+games/
+*.pgn
+*.log
+
+kaggle/upload/
+kaggle/kernel-metadata.local.json
+
+# Editor scratch and personal notes, not part of the project.
+*.kate-swp
+.*.kate-swp
+reply*.txt
+kaggle-fix.txt

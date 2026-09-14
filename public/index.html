@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fly Chess — Inside the Mind</title>
+<style>
+:root{
+  --bg:#f6f5f2; --panel:#fffefb; --ink:#1b1a17; --muted:#6c6862; --line:#dedad2;
+  --light:#e8dfc8; --dark:#9c7f5c; --accent:#2f6f4e; --warn:#a4462d; --pos:#2f6f4e; --neg:#a4462d;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#16161a; --panel:#1e1e23; --ink:#eceae5; --muted:#9a958c; --line:#32323a;
+  --light:#e8dfc8; --dark:#9c7f5c; --accent:#6fbf8f; --warn:#e08a6c; --pos:#6fbf8f; --neg:#e08a6c;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding-block:20px;padding-left:16px;padding-right:16px}
+h1{font-size:19px;margin:0;letter-spacing:-.01em}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);
+  margin:0 0 10px;font-weight:600}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;justify-content:space-between;
+  margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.sub{color:var(--muted);font-size:12.5px}
+.grid{display:grid;grid-template-columns:minmax(340px,1.45fr) minmax(300px,1fr);
+  gap:18px;align-items:start}
+@media (max-width:1040px){.grid{grid-template-columns:1fr}}
+@media (min-width:1041px){.wrap{max-width:1460px}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px}
+/* board */
+#board{width:100%;aspect-ratio:1;max-width:100%;display:grid;
+  grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);
+  border:1px solid var(--line);border-radius:8px;overflow:hidden;
+  container-type:inline-size;max-width:720px;margin:0 auto}
+.sq{position:relative;display:flex;align-items:center;justify-content:center;
+  font-size:min(9vw,44px);line-height:1;cursor:pointer;user-select:none}
+/* Container units: the pieces scale with the board, not the viewport. */
+@supports (font-size:1cqw){ .sq{font-size:9.2cqw} }
+.sq .p{line-height:1;pointer-events:none}
+.sq .p.w{color:#fffdf8;-webkit-text-stroke:1.6px #3a3128;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.sq .p.b{color:#1c1815;-webkit-text-stroke:1.6px #efe9dc;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.sq.l{background:var(--light)} .sq.d{background:var(--dark)}
+.sq.sel{outline:3px solid var(--accent);outline-offset:-3px}
+.sq.last{box-shadow:inset 0 0 0 3px color-mix(in srgb,var(--accent) 45%,transparent)}
+.sq.chk{box-shadow:inset 0 0 0 3px var(--warn)}
+.dot{position:absolute;width:26%;height:26%;border-radius:50%;
+  background:color-mix(in srgb,var(--accent) 55%,transparent);pointer-events:none}
+.sq.cap .dot{width:82%;height:82%;background:none;
+  border:3px solid color-mix(in srgb,var(--warn) 65%,transparent)}
+.controls{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+button{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--line);
+  background:var(--panel);color:var(--ink);cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:default}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+select{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--line);
+  background:var(--panel);color:var(--ink)}
+#status{margin-top:10px;min-height:20px;font-size:13px}
+.thinking{color:var(--accent)}
+/* eval bar */
+.bar{height:22px;border-radius:6px;overflow:hidden;background:var(--dark);position:relative;
+  border:1px solid var(--line)}
+.bar>span{position:absolute;inset:0 auto 0 0;background:var(--light);transition:width .35s}
+.bar em{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-style:normal;font-size:12px;font-variant-numeric:tabular-nums;font-weight:600;
+  color:#1c1815;text-shadow:0 1px 2px rgba(255,255,255,.65)}
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(102px,1fr));gap:10px}
+.stat{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+.stat b{display:block;font-size:17px;font-variant-numeric:tabular-nums;font-weight:600}
+.stat span{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+/* neurons */
+.layer{display:grid;gap:3px;margin-bottom:4px}
+.n{aspect-ratio:1;border-radius:2px;background:var(--line);position:relative}
+.n[data-on="1"]{background:var(--accent)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:6px}
+.swatch{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:4px}
+/* planes */
+.planes{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:10px}
+.plane h3{margin:0 0 4px;font-size:11px;font-weight:600;color:var(--muted)}
+.mini{display:grid;grid-template-columns:repeat(8,1fr);gap:1px;aspect-ratio:1}
+.mini i{background:var(--bg);border-radius:1px}
+.mini i.on{background:var(--accent)}
+.plane.them .mini i.on{background:var(--warn)}
+/* lists */
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);font-size:12.5px}
+th{color:var(--muted);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em}
+td.num{text-align:right}
+.pv{font-variant-numeric:tabular-nums;font-size:13px;word-break:break-word}
+.pv b{color:var(--accent)}
+.scroll{max-height:260px;overflow:auto}
+.note{font-size:11.5px;color:var(--muted);margin-top:8px}
+/* 3D drawer */
+#drawer{position:fixed;top:0;right:0;height:100dvh;width:min(420px,92vw);z-index:40;
+  background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;
+  transform:translateX(100%);transition:transform .28s ease;box-shadow:-12px 0 32px rgba(0,0,0,.14)}
+#drawer.open{transform:translateX(0)}
+#drawer header{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:12px 14px;border-bottom:1px solid var(--line);margin:0}
+#drawer .body{flex:1;min-height:0;display:flex;flex-direction:column;padding:12px 14px;gap:10px;
+  overflow:auto}
+#scene{width:100%;aspect-ratio:1;border:1px solid var(--line);border-radius:10px;
+  background:var(--bg);touch-action:none;cursor:grab}
+#scene:active{cursor:grabbing}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+.row label{display:inline-flex;align-items:center;gap:5px}
+body.drawer-open .wrap{padding-right:min(436px,94vw)}
+@media (max-width:900px){body.drawer-open .wrap{padding-right:16px}}
+.chip{padding:5px 9px;border-radius:999px;border:1px solid var(--line);background:var(--bg);
+  font-size:11.5px;cursor:pointer}
+.chip[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div>
+    <h1>Fly Chess — Inside the Mind</h1>
+    <div class="sub" id="modelinfo">loading…</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <label class="sub">think
+      <select id="secs">
+        <option value="0.3">0.3s</option>
+        <option value="1.5" selected>1.5s</option>
+        <option value="4">4s</option>
+        <option value="10">10s</option>
+      </select>
+    </label>
+    <button id="viz" aria-expanded="false">3D mind</button>
+    <button id="new">New game</button>
+    <button id="undo">Undo</button>
+  </div>
+</header>
+
+<div class="grid">
+  <div>
+    <div class="card">
+      <div id="board"></div>
+      <div class="controls">
+        <button id="go" class="primary">Let it move</button>
+        <button id="flip">Flip board</button>
+      </div>
+      <div id="status">You are White. Click a piece to move.</div>
+    </div>
+    <div class="card">
+      <h2>Evaluation</h2>
+      <div class="bar"><span id="barfill" style="width:50%"></span><em id="barlabel">0.00</em></div>
+      <div class="stats" style="margin-top:12px">
+        <div class="stat"><b id="s-material">0</b><span>material</span></div>
+        <div class="stat"><b id="s-correction">0</b><span>net correction</span></div>
+        <div class="stat"><b id="s-score">0</b><span>final (cp)</span></div>
+      </div>
+      <p class="note">The network never outputs a move. It outputs one number: how good this
+      position is for the side to move. <b>Final = material + 100 × correction.</b> The search
+      is what actually chooses.</p>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h2>Last search</h2>
+      <div class="stats">
+        <div class="stat"><b id="t-depth">–</b><span>depth</span></div>
+        <div class="stat"><b id="t-nodes">–</b><span>positions</span></div>
+        <div class="stat"><b id="t-nps">–</b><span>per second</span></div>
+        <div class="stat"><b id="t-score">–</b><span>score · white</span></div>
+        <div class="stat"><b id="t-tt">–</b><span>cached</span></div>
+        <div class="stat"><b id="t-time">–</b><span>seconds</span></div>
+      </div>
+      <div style="margin-top:12px">
+        <h2 style="margin-bottom:6px">Expected line</h2>
+        <div class="pv" id="pv">—</div>
+      </div>
+      <p class="note">Every position in that count was scored by the 104,257-parameter network
+      below. The “expected line” is what it thinks happens if both sides play their best.</p>
+    </div>
+
+    <div class="card">
+      <h2>Hidden layer 1 — 128 neurons</h2>
+      <div class="layer" id="h1" style="grid-template-columns:repeat(32,1fr)"></div>
+      <h2 style="margin-top:14px">Hidden layer 2 — 32 neurons</h2>
+      <div class="layer" id="h2" style="grid-template-columns:repeat(16,1fr)"></div>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--accent)"></i>firing (ReLU &gt; 0)</span>
+        <span><i class="swatch" style="background:var(--line)"></i>silent</span>
+        <span id="firing"></span>
+      </div>
+      <p class="note">Brightness is activation strength. Roughly half of each layer is silent in
+      any one position — that sparsity is the ReLU, and it is why the accumulator trick works.</p>
+    </div>
+
+    <div class="card">
+      <h2>What it sees — the 768 piece inputs</h2>
+      <div class="planes" id="planes"></div>
+      <p class="note">Twelve 64-square planes, always from the mover's point of view: “us” and
+      “them”, never white and black. Plus 4 castling-rights inputs, 8 en-passant files and the
+      halfmove clock — 781 in total.</p>
+    </div>
+
+    <div class="card">
+      <h2>Every legal move, scored by the network alone</h2>
+      <div class="scroll">
+        <table><thead><tr><th>move</th><th class="num">static score</th></tr></thead>
+        <tbody id="cands"></tbody></table>
+      </div>
+      <p class="note">No look-ahead here — just the raw opinion of the network on each resulting
+      position. Compare the top of this list with the move the search actually picks: when they
+      differ, the look-ahead has spotted something the network could not.</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<aside id="drawer" aria-hidden="true" aria-label="3D activation view">
+  <header>
+    <h2 style="margin:0">Activations in 3D</h2>
+    <button id="close" aria-label="Close 3D panel">✕</button>
+  </header>
+  <div class="body">
+    <canvas id="scene"></canvas>
+    <div class="row">
+      <button class="chip" id="spin" aria-pressed="true">auto-rotate</button>
+      <button class="chip" id="edges" aria-pressed="true">connections</button>
+      <button class="chip" id="inputs" aria-pressed="true">inputs</button>
+      <button class="chip" id="reset">reset view</button>
+    </div>
+    <div class="row">
+      <span><i class="swatch" style="background:var(--accent)"></i>firing</span>
+      <span><i class="swatch" style="background:var(--line)"></i>silent</span>
+      <span><i class="swatch" style="background:var(--warn)"></i>negative weight</span>
+    </div>
+    <p class="note" style="margin:0">Drag to rotate, scroll to zoom. Height and brightness are
+    activation strength. Rear plane: the input features that are switched on in this position.
+    Middle planes: the 128 and 32 hidden neurons. Front: the single output.
+    Connections are the real layer-2 weights, drawn only where both ends are active — the
+    strongest 900 of 4,096.</p>
+    <div class="row" id="vizstats" style="font-variant-numeric:tabular-nums"></div>
+  </div>
+</aside>
+
+<script>
+// Solid glyphs for both colours; the side is carried by CSS, not by the code point.
+const GLYPH={p:'♟',n:'♞',b:'♝',r:'♜',q:'♛',k:'♚'};
+const FILES='abcdefgh';
+let state=null, history=[], selected=null, flipped=false, busy=false;
+
+const $=id=>document.getElementById(id);
+async function api(path,body){
+  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},
+                            body:JSON.stringify(body||{})});
+  const data=await r.json();
+  if(!r.ok||data.error) throw new Error(data.error||('HTTP '+r.status));
+  return data;
+}
+function boardFromFen(fen){
+  const rows=fen.split(' ')[0].split('/'); const map={};
+  rows.forEach((row,r)=>{let f=0;
+    for(const ch of row){ if(/\d/.test(ch)){f+=+ch;continue;}
+      map[FILES[f]+(8-r)]=ch; f++; }});
+  return map;
+}
+function renderBoard(){
+  const el=$('board'); el.innerHTML='';
+  const pieces=boardFromFen(state.fen);
+  const ranks=flipped?[1,2,3,4,5,6,7,8]:[8,7,6,5,4,3,2,1];
+  const files=flipped?[...FILES].reverse():[...FILES];
+  const last=state.lastMove?[state.lastMove.slice(0,2),state.lastMove.slice(2,4)]:[];
+  const targets=selected?(state.legal[selected]||[]):[];
+  for(const rank of ranks) for(const file of files){
+    const name=file+rank, d=document.createElement('div');
+    const dark=(FILES.indexOf(file)+rank)%2===0;
+    d.className='sq '+(dark?'d':'l');
+    if(last.includes(name)) d.classList.add('last');
+    if(selected===name) d.classList.add('sel');
+    const piece=pieces[name];
+    if(piece){
+      const g=document.createElement('span');
+      g.className='p '+(piece===piece.toUpperCase()?'w':'b');
+      g.textContent=GLYPH[piece.toLowerCase()];
+      d.appendChild(g);
+    }
+    const hit=targets.find(t=>t.to===name);
+    if(hit){
+      if(piece) d.classList.add('cap');   // classList.add('') throws, aborting the render
+      const dot=document.createElement('span'); dot.className='dot'; d.appendChild(dot);
+    }
+    if(state.check&&piece&&piece.toLowerCase()==='k'&&
+       ((state.turn==='white')===(piece==='K'))) d.classList.add('chk');
+    d.onclick=()=>clickSquare(name,hit);
+    el.appendChild(d);
+  }
+}
+async function clickSquare(name,hit){
+  if(busy||state.gameOver) return;
+  if(hit){
+    let uci=hit.uci;
+    const promos=(state.legal[selected]||[]).filter(t=>t.to===name&&t.promotion);
+    if(promos.length){
+      const pick=prompt('Promote to: q, r, b or n','q');
+      if(pick===null) return;
+      const found=promos.find(t=>t.promotion===pick.toLowerCase().trim());
+      if(!found){ setStatus('Not a valid promotion piece.'); return; }
+      uci=found.uci;
+    }
+    selected=null; await applyMove(uci); return;
+  }
+  selected=(selected===name||!state.legal[name])?(state.legal[name]?name:null):name;
+  renderBoard();
+}
+function setStatus(text,cls){ const s=$('status'); s.textContent=text; s.className=cls||''; }
+function fmt(cp){ return (cp>=0?'+':'')+(cp/100).toFixed(2); }
+
+function paintEvaluation(){
+  const e=state.evaluation;
+  const white=state.turn==='white'?e.score:-e.score;
+  const pct=100/(1+Math.pow(10,-white/400));
+  $('barfill').style.width=pct.toFixed(1)+'%';
+  $('barlabel').textContent=fmt(white)+' (white)';
+  $('s-material').textContent=Math.round(e.material);
+  $('s-correction').textContent=(e.correction*100).toFixed(0);
+  $('s-score').textContent=Math.round(e.score);
+  paintLayer('h1',e.hidden1); paintLayer('h2',e.hidden2);
+  const live=e.hidden1.filter(v=>v>0).length;
+  $('firing').textContent=live+' / 128 firing';
+  paintPlanes();
+}
+function paintLayer(id,values){
+  const el=$(id);
+  if(el.children.length!==values.length){
+    el.innerHTML=''; values.forEach(()=>el.appendChild(document.createElement('div')));
+    [...el.children].forEach(c=>c.className='n');
+  }
+  const peak=Math.max(...values.map(Math.abs),1e-6);
+  values.forEach((v,i)=>{ const c=el.children[i];
+    c.dataset.on=v>0?'1':'0';
+    c.style.opacity=v>0?(0.25+0.75*v/peak).toFixed(3):'1';
+    c.title=`neuron ${i}: ${v.toFixed(3)}`; });
+}
+function paintPlanes(){
+  const el=$('planes');
+  el.innerHTML='';
+  for(const plane of state.planes){
+    const wrap=document.createElement('div');
+    wrap.className='plane '+(plane.side==='them'?'them':'');
+    wrap.innerHTML=`<h3>${plane.side} ${plane.piece}</h3>`;
+    const mini=document.createElement('div'); mini.className='mini';
+    const on=new Set(plane.squares);
+    for(let rank=7;rank>=0;rank--) for(let file=0;file<8;file++){
+      const cell=document.createElement('i');
+      if(on.has(rank*8+file)) cell.className='on';
+      mini.appendChild(cell);
+    }
+    wrap.appendChild(mini); el.appendChild(wrap);
+  }
+}
+async function paintCandidates(){
+  const {candidates}=await api('/api/candidates',{fen:state.fen});
+  $('cands').innerHTML=candidates.map(c=>
+    `<tr><td>${c.san}</td><td class="num">${fmt(c.static)}</td></tr>`).join('')||
+    '<tr><td colspan="2">no legal moves</td></tr>';
+}
+function paintThought(t){
+  $('t-depth').textContent=t.depth;
+  $('t-nodes').textContent=t.nodes.toLocaleString();
+  $('t-nps').textContent=Math.round(t.nps).toLocaleString();
+  // choose() returns the score from the mover's point of view; the mover is the
+  // side that just played, so flip it when that was Black to match the bar.
+  const whiteScore=state.turn==='white'?-t.score:t.score;
+  $('t-score').textContent=Math.abs(t.score)>29000?'mate':fmt(whiteScore);
+  $('t-tt').textContent=t.ttEntries.toLocaleString();
+  $('t-time').textContent=t.seconds.toFixed(2);
+  $('pv').innerHTML=t.pv.length
+    ? t.pv.map((m,i)=>i===0?`<b>${m.san}</b>`:m.san).join(' ')
+    : '—';
+}
+function describeEnd(){
+  if(!state.gameOver) return null;
+  const how=(state.termination||'').toLowerCase().replace(/_/g,' ');
+  if(state.result==='1/2-1/2') return `Draw — ${how}.`;
+  return (state.result==='1-0'?'White wins':'Black wins')+` — ${how}.`;
+}
+async function refresh(){
+  renderBoard(); paintEvaluation(); await paintCandidates();
+  const done=describeEnd();
+  setStatus(done||(state.turn==='white'?'Your move.':'Engine to move — press “Let it move”.'));
+  $('go').disabled=state.gameOver; $('undo').disabled=history.length===0;
+}
+async function applyMove(uci){
+  busy=true; history.push(state.fen);
+  try{
+    state=await api('/api/move',{fen:state.fen,uci});
+    await refresh();
+    if(!state.gameOver){ busy=false; await think(); return; }
+  }catch(err){ setStatus('Error: '+err.message); }
+  busy=false;
+}
+async function think(){
+  if(busy||state.gameOver) return;
+  busy=true; $('go').disabled=true;
+  setStatus('Thinking…','thinking');
+  try{
+    history.push(state.fen);
+    const seconds=parseFloat($('secs').value);
+    const {thought,position}=await api('/api/think',{fen:state.fen,seconds});
+    state=position; paintThought(thought);
+    await refresh();
+    const done=describeEnd();
+    setStatus(done||`Played ${thought.san} — depth ${thought.depth}, `+
+      `${thought.nodes.toLocaleString()} positions searched. Your move.`);
+  }catch(err){ setStatus('Error: '+err.message); }
+  busy=false; $('go').disabled=state.gameOver;
+}
+$('go').onclick=think;
+$('flip').onclick=()=>{flipped=!flipped;renderBoard();};
+$('new').onclick=async()=>{ history=[]; selected=null;
+  state=await api('/api/position',{}); await refresh(); };
+$('undo').onclick=async()=>{ if(!history.length) return;
+  const back=history.length>1?history.splice(-2)[0]:history.pop();
+  selected=null; state=await api('/api/position',{fen:back}); await refresh(); };
+
+
+/* ---------- 3D activation view ----------------------------------------
+   Hand-rolled projection on a 2D canvas: no library, so the page still works
+   with no network at all. Painter's algorithm — sort by depth, draw far first. */
+const Viz = (() => {
+  const canvas=$('scene'), ctx=canvas.getContext('2d');
+  let W=0,H=0,dpr=1;
+  let yaw=-0.95, pitch=-0.26, zoom=1.0, spin=true, showEdges=true, showInputs=true;
+  let weights=null, frame=0, running=false;
+  const PLANES={in:-148, h1:-52, h2:58, out:148};
+
+  function resize(){
+    const rect=canvas.getBoundingClientRect();
+    dpr=Math.min(window.devicePixelRatio||1, 2);
+    W=Math.max(1,Math.round(rect.width)); H=Math.max(1,Math.round(rect.height));
+    canvas.width=W*dpr; canvas.height=H*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  function project(x,y,z){
+    const cy=Math.cos(yaw), sy=Math.sin(yaw);
+    let X=x*cy - z*sy, Z=x*sy + z*cy;
+    const cp=Math.cos(pitch), sp=Math.sin(pitch);
+    let Y=y*cp - Z*sp; Z=y*sp + Z*cp;
+    const focal=520, depth=focal+Z;
+    if(depth<40) return null;
+    const k=focal/depth*zoom;
+    return {x:W/2 + X*k, y:H/2 - Y*k, z:Z, k};
+  }
+  function gridPoint(i,cols,spread,plane,rows){
+    const col=i%cols, row=Math.floor(i/cols);
+    return {x:(col-(cols-1)/2)*spread, y:((rows-1)/2-row)*spread, z:plane};
+  }
+  // Nodes for the current position, with activation carried through.
+  function build(){
+    const ev=state&&state.evaluation; if(!ev) return null;
+    const h1=ev.hidden1, h2=ev.hidden2;
+    if(!h1.length) return null;
+    const peak1=Math.max(...h1,1e-6), peak2=Math.max(...h2,1e-6);
+    const nodes=[];
+    h1.forEach((v,i)=>{ const p=gridPoint(i,16,17,PLANES.h1,8);
+      nodes.push({...p, y:p.y+ (v/peak1)*16, v, t:v/peak1, r:3.1, layer:'h1', i}); });
+    h2.forEach((v,i)=>{ const p=gridPoint(i,8,30,PLANES.h2,4);
+      nodes.push({...p, y:p.y+ (v/peak2)*22, v, t:v/peak2, r:5.2, layer:'h2', i}); });
+    nodes.push({x:0,y:0,z:PLANES.out, v:ev.correction, t:1, r:8, layer:'out', i:0});
+    if(showInputs){
+      // Only the features that are actually on: ~30 of 781.
+      ev.features.filter(f=>f<768).forEach(f=>{
+        const plane=Math.floor(f/64), sq=f%64;
+        const col=plane%4, row=Math.floor(plane/4);
+        const fx=sq%8, fy=Math.floor(sq/8);
+        nodes.push({x:(col-1.5)*48 + (fx-3.5)*5.5, y:(1-row)*48 + (fy-3.5)*5.5,
+                    z:PLANES.in, v:1, t:1, r:2.4, layer:'in', i:f, them:(plane%2===1)});
+      });
+    }
+    return {nodes,h1,h2,peak1,peak2};
+  }
+  function strongEdges(data){
+    if(!weights||!showEdges) return [];
+    const {w2}=weights, out=[];
+    for(let i=0;i<128;i++){
+      const a=data.h1[i]; if(a<=0) continue;
+      for(let j=0;j<32;j++){
+        if(data.h2[j]<=0) continue;
+        const w=w2[i*32+j], m=Math.abs(w)*a;
+        if(m>0.05) out.push({i,j,w,m});
+      }
+    }
+    out.sort((p,q)=>q.m-p.m);
+    return out.slice(0,900);
+  }
+  function draw(){
+    if(!running) return;
+    frame=requestAnimationFrame(draw);
+    if(spin) yaw+=0.0032;
+    const data=build();
+    ctx.clearRect(0,0,W,H);
+    if(!data){ ctx.fillStyle=css('--muted'); ctx.font='13px system-ui';
+      ctx.fillText('no activations yet', 14, 24); return; }
+    // Layer outlines first: without them the projected points read as one cloud.
+    const frames=[[PLANES.in,100,76,'781 inputs (active)'],
+                  [PLANES.h1,146,78,'128 hidden'],
+                  [PLANES.h2,130,68,'32 hidden'],
+                  [PLANES.out,26,26,'output']];
+    ctx.lineWidth=1;
+    for(const [z,hw,hh,label] of frames){
+      const corners=[[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].map(([x,y])=>project(x,y,z));
+      if(corners.some(c=>!c)) continue;
+      ctx.strokeStyle=css('--muted'); ctx.globalAlpha=.45;
+      ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.moveTo(corners[0].x,corners[0].y);
+      for(let i=1;i<4;i++) ctx.lineTo(corners[i].x,corners[i].y);
+      ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+      const tag=project(-hw,hh,z);
+      if(tag){ ctx.globalAlpha=1; ctx.fillStyle=css('--muted');
+        ctx.font='600 11px ui-sans-serif,system-ui';
+        // Narrow planes sit near the canvas edge; right-align so the text stays on.
+        ctx.textAlign = hw < 60 ? 'right' : 'left';
+        ctx.fillText(label, tag.x + (hw < 60 ? -4 : 4), tag.y-6);
+        ctx.textAlign='left'; }
+    }
+    ctx.globalAlpha=1;
+
+    const pos={};
+    for(const n of data.nodes){ const p=project(n.x,n.y,n.z); if(p) pos[n.layer+':'+n.i]={...p,n}; }
+    // edges first, behind the nodes
+    const edges=strongEdges(data);
+    if(edges.length){
+      const peak=edges[0].m||1;
+      for(const e of edges){
+        const a=pos['h1:'+e.i], b=pos['h2:'+e.j]; if(!a||!b) continue;
+        ctx.strokeStyle=e.w>=0?css('--accent'):css('--warn');
+        ctx.globalAlpha=Math.min(.5, .05+.45*e.m/peak);
+        ctx.lineWidth=Math.max(.4, 1.1*e.m/peak);
+        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+      }
+      // layer 2 -> output
+      for(let j=0;j<32;j++){
+        const a=pos['h2:'+j], b=pos['out:0']; if(!a||!b||data.h2[j]<=0) continue;
+        const w=weights.w3[j];
+        ctx.strokeStyle=w>=0?css('--accent'):css('--warn');
+        ctx.globalAlpha=Math.min(.6,.1+Math.abs(w)*data.h2[j]/(data.peak2||1));
+        ctx.lineWidth=.9; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+      }
+      ctx.globalAlpha=1;
+    }
+    const drawn=Object.values(pos).sort((a,b)=>b.z-a.z);
+    for(const p of drawn){
+      const n=p.n, r=Math.max(.8, n.r*p.k);
+      if(n.layer==='in'){
+        ctx.fillStyle=n.them?css('--warn'):css('--accent'); ctx.globalAlpha=.75;
+      } else if(n.layer==='out'){
+        ctx.fillStyle=n.v>=0?css('--accent'):css('--warn'); ctx.globalAlpha=1;
+      } else {
+        ctx.fillStyle=n.v>0?css('--accent'):css('--line');
+        ctx.globalAlpha=n.v>0?(.3+.7*n.t):.5;
+      }
+      ctx.beginPath(); ctx.arc(p.x,p.y,r,0,6.2832); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+    $('vizstats').textContent=
+      `${data.h1.filter(v=>v>0).length}/128 · ${data.h2.filter(v=>v>0).length}/32 firing`+
+      (edges.length?` · ${edges.length} connections drawn`:'');
+  }
+  function css(name){ return getComputedStyle(document.body).getPropertyValue(name).trim(); }
+
+  // drag to rotate, wheel to zoom
+  let dragging=false, lastX=0, lastY=0;
+  canvas.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;
+    canvas.setPointerCapture(e.pointerId); spin=false; $('spin').setAttribute('aria-pressed','false');});
+  canvas.addEventListener('pointermove',e=>{ if(!dragging) return;
+    yaw+=(e.clientX-lastX)*0.008; pitch=Math.max(-1.4,Math.min(1.4,pitch+(e.clientY-lastY)*0.006));
+    lastX=e.clientX; lastY=e.clientY; });
+  canvas.addEventListener('pointerup',e=>{dragging=false;});
+  canvas.addEventListener('wheel',e=>{e.preventDefault();
+    zoom=Math.max(.45,Math.min(3, zoom*(e.deltaY>0?0.92:1.08)));},{passive:false});
+
+  function chip(id,get,set){ const el=$(id);
+    el.onclick=()=>{ set(!get()); el.setAttribute('aria-pressed', get()?'true':'false'); }; }
+  chip('spin',()=>spin,v=>spin=v);
+  chip('edges',()=>showEdges,v=>showEdges=v);
+  chip('inputs',()=>showInputs,v=>showInputs=v);
+  $('reset').onclick=()=>{ yaw=-0.95; pitch=-0.26; zoom=1.0; };
+
+  return {
+    async open(){
+      document.body.classList.add('drawer-open');
+      $('drawer').classList.add('open'); $('drawer').setAttribute('aria-hidden','false');
+      $('viz').setAttribute('aria-expanded','true');
+      try{ localStorage.setItem('flyviz','1'); }catch(e){}
+      if(!weights){ try{ weights=await api('/api/weights',{}); }catch(e){ weights=null; } }
+      resize(); if(!running){ running=true; draw(); }
+    },
+    close(){
+      document.body.classList.remove('drawer-open');
+      $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden','true');
+      $('viz').setAttribute('aria-expanded','false');
+      try{ localStorage.setItem('flyviz','0'); }catch(e){}
+      running=false; cancelAnimationFrame(frame);
+    },
+    get isOpen(){ return running; },
+    resize,
+  };
+})();
+$('viz').onclick=()=>Viz.isOpen?Viz.close():Viz.open();
+$('close').onclick=()=>Viz.close();
+window.addEventListener('resize',()=>{ if(Viz.isOpen) Viz.resize(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&Viz.isOpen) Viz.close(); });
+
+(async()=>{
+  try{
+    const info=await api('/api/info',{});
+    $('modelinfo').textContent=
+      `104,257-parameter network · ${info.model} · alpha-beta search, max depth ${info.depth}`;
+    state=await api('/api/position',{});
+    await refresh();
+    let remembered=null;
+    try{ remembered=localStorage.getItem('flyviz'); }catch(e){}
+    if(remembered==='1') await Viz.open();
+  }catch(err){ setStatus('Could not reach the engine: '+err.message); }
+})();
+</script>
+</body>
+</html>
