@@ -26,5 +26,5 @@ def engine():
                          seconds=float(os.environ.get('FLY_SECONDS', '1.5')),
                          depth=int(os.environ.get('FLY_DEPTH', '8')),
                          # Keep well inside the function's wall-clock limit.
-                         max_seconds=float(os.environ.get('FLY_MAX_SECONDS', '8')))
+                         max_seconds=float(os.environ.get('FLY_MAX_SECONDS', '4')))
     return _engine

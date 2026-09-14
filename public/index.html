@@ -125,7 +125,6 @@ body.drawer-open .wrap{padding-right:min(436px,94vw)}
         <option value="0.3">0.3s</option>
         <option value="1.5" selected>1.5s</option>
         <option value="4">4s</option>
-        <option value="10">10s</option>
       </select>
     </label>
     <button id="viz" aria-expanded="false">3D mind</button>
@@ -248,10 +247,22 @@ let state=null, history=[], selected=null, flipped=false, busy=false;
 
 const $=id=>document.getElementById(id);
 async function api(path,body){
-  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},
-                            body:JSON.stringify(body||{})});
-  const data=await r.json();
-  if(!r.ok||data.error) throw new Error(data.error||('HTTP '+r.status));
+  let r;
+  try{
+    r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},
+                        body:JSON.stringify(body||{})});
+  }catch(e){ throw new Error('network: '+e.message); }
+  // A platform error (timeout, crash, cold-start failure) returns an HTML page,
+  // not JSON. Report the status and a readable snippet rather than letting
+  // JSON.parse fail with "unexpected character at line 1 column 1".
+  const text=await r.text();
+  let data=null;
+  try{ data=JSON.parse(text); }catch(e){
+    const snippet=text.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,160);
+    throw new Error(`HTTP ${r.status} ${r.statusText||''} — ${snippet||'empty response'} `.trim()
+                    +` (${path})`);
+  }
+  if(!r.ok||data.error) throw new Error((data.error||('HTTP '+r.status))+` (${path})`);
   return data;
 }
 function boardFromFen(fen){
@@ -388,9 +399,11 @@ async function refresh(){
   $('go').disabled=state.gameOver; $('undo').disabled=history.length===0;
 }
 async function applyMove(uci){
-  busy=true; history.push(state.fen);
+  busy=true;
+  const previous=state.fen;
   try{
-    state=await api('/api/move',{fen:state.fen,uci});
+    state=await api('/api/move',{fen:previous,uci});
+    history.push(previous);
     await refresh();
     if(!state.gameOver){ busy=false; await think(); return; }
   }catch(err){ setStatus('Error: '+err.message); }
@@ -400,10 +413,11 @@ async function think(){
   if(busy||state.gameOver) return;
   busy=true; $('go').disabled=true;
   setStatus('Thinking…','thinking');
+  const previous=state.fen;
   try{
-    history.push(state.fen);
     const seconds=parseFloat($('secs').value);
-    const {thought,position}=await api('/api/think',{fen:state.fen,seconds});
+    const {thought,position}=await api('/api/think',{fen:previous,seconds});
+    history.push(previous);
     state=position; paintThought(thought);
     await refresh();
     const done=describeEnd();

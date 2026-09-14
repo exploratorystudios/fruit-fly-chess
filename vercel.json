@@ -3,7 +3,7 @@
   "functions": {
     "app.py": {
       "excludeFiles": "{tests/**,kaggle/**,data/**,runs/**,web/**,games/**,**/*.pgn}",
-      "maxDuration": 30,
+      "maxDuration": 15,
       "memory": 1024
     }
   }

@@ -202,14 +202,15 @@ page (`public/index.html`). Training data, PGNs and experiment runs are excluded
 `.gitignore` and `.vercelignore`; PyTorch lives in `requirements-dev.txt` and is
 needed only for training, never for playing.
 
-`vercel.json` gives the function 1 GB and a 30-second ceiling. Thinking time is
+`vercel.json` gives the function 1 GB and a 15-second ceiling (inside the Hobby
+limit; raise it on a paid plan). Thinking time is
 clamped server-side so a slow search returns a move rather than a timeout:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `FLY_SECONDS` | `1.5` | Default thinking time per move |
 | `FLY_DEPTH` | `8` | Maximum search depth |
-| `FLY_MAX_SECONDS` | `8` | Hard cap on a single request's search |
+| `FLY_MAX_SECONDS` | `4` | Hard cap on a single request's search |
 
 A cold start pays for importing numpy and loading the weights; the engine is then
 cached per warm container, so the first move after an idle period is slower.
