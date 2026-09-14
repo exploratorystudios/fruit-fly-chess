@@ -184,9 +184,10 @@ Stdlib only, no build step and no internet; it binds to localhost.
 
 ## Deploying to Vercel
 
-The site runs as Python serverless functions, one per API action in `api/`, each a
-thin wrapper around the same `dispatch()` the local server uses — so the deployment
-and `run.sh site` cannot drift apart. The page itself is static in `public/`.
+`app.py` is a plain WSGI application — Vercel's Python runtime loads one top-level
+`app` and routes every request to it, so this serves both the static page and the
+engine API. The API calls the same `dispatch()` the local server uses, so the
+deployment cannot drift from `bash run.sh site`.
 
 ```bash
 npm i -g vercel
@@ -194,15 +195,15 @@ vercel            # preview
 vercel --prod
 ```
 
-Everything the deployment needs is in the repo: the engine (`fastchess/`), the
-weights (`model/best.npz`, 410 KB) and the page (`public/index.html`). Training data,
-PGNs and experiment runs are deliberately excluded — see `.gitignore`. Only
-`requirements.txt` (numpy + python-chess) is installed in the function; PyTorch is in
-`requirements-dev.txt` and is needed solely for training, never for playing.
+No web framework is used on purpose: the function bundle is just numpy and
+python-chess, which keeps cold starts short. Everything the deployment needs is in
+the repo — the engine (`fastchess/`), the weights (`model/best.npz`, 410 KB) and the
+page (`public/index.html`). Training data, PGNs and experiment runs are excluded via
+`.gitignore` and `.vercelignore`; PyTorch lives in `requirements-dev.txt` and is
+needed only for training, never for playing.
 
-`vercel.json` gives the functions 1 GB and a 30-second ceiling. Thinking time is
-clamped server-side to `FLY_MAX_SECONDS` (default 8 s) so a slow search returns a move
-rather than a timeout. Tune with environment variables:
+`vercel.json` gives the function 1 GB and a 30-second ceiling. Thinking time is
+clamped server-side so a slow search returns a move rather than a timeout:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -211,7 +212,7 @@ rather than a timeout. Tune with environment variables:
 | `FLY_MAX_SECONDS` | `8` | Hard cap on a single request's search |
 
 A cold start pays for importing numpy and loading the weights; the engine is then
-cached per warm container. Expect the first move after an idle period to be slower.
+cached per warm container, so the first move after an idle period is slower.
 
 ## Measure playing strength
 

@@ -1,8 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/*.py": {
-      "includeFiles": "{fastchess/**,model/**}",
+    "app.py": {
+      "excludeFiles": "{tests/**,kaggle/**,data/**,runs/**,web/**,games/**,**/*.pgn}",
       "maxDuration": 30,
       "memory": 1024
     }

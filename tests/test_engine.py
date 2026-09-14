@@ -216,3 +216,51 @@ class ServerlessTest(unittest.TestCase):
         status, payload = dispatch(self.engine, 'think', {'seconds': 10_000})
         self.assertEqual(status, 200)
         self.assertLess(payload['thought']['seconds'], self.engine.max_seconds + 1)
+
+
+class WsgiAppTest(unittest.TestCase):
+    """The Vercel entrypoint. Vercel routes every request to this one callable,
+    so it must serve the page and the API, and refuse everything else."""
+
+    def call(self, method, path, body=None):
+        import io
+        import json as jsonlib
+        from app import app
+        raw = jsonlib.dumps(body).encode() if body is not None else b''
+        environ = {'REQUEST_METHOD': method, 'PATH_INFO': path,
+                   'CONTENT_LENGTH': str(len(raw)), 'wsgi.input': io.BytesIO(raw)}
+        captured = {}
+
+        def start(status, headers):
+            captured['status'] = int(status.split()[0])
+            captured['headers'] = dict(headers)
+        payload = b''.join(app(environ, start))
+        return captured['status'], captured['headers'], payload
+
+    def test_serves_the_page(self):
+        status, headers, body = self.call('GET', '/')
+        self.assertEqual(status, 200)
+        self.assertIn('text/html', headers['Content-Type'])
+        self.assertIn(b'Fly Chess', body)
+
+    def test_api_actions_round_trip(self):
+        import json as jsonlib
+        status, _, body = self.call('POST', '/api/position', {})
+        self.assertEqual(status, 200)
+        position = jsonlib.loads(body)
+        status, _, body = self.call('POST', '/api/move',
+                                    {'fen': position['fen'], 'uci': 'e2e4'})
+        self.assertEqual(status, 200)
+        self.assertIn('e3', jsonlib.loads(body)['fen'].split()[3] + 'e3')
+
+    def test_refuses_path_traversal(self):
+        for path in ('/../fastchess/model.py', '/../../etc/passwd', '/../model/best.npz'):
+            with self.subTest(path=path):
+                status, _, _ = self.call('GET', path)
+                self.assertEqual(status, 404)
+
+    def test_method_and_action_errors(self):
+        self.assertEqual(self.call('GET', '/api/info')[0], 405)
+        self.assertEqual(self.call('PUT', '/nope')[0], 405)
+        self.assertEqual(self.call('POST', '/api/nope', {})[0], 404)
+        self.assertEqual(self.call('POST', '/api/position', {'fen': 'nonsense'})[0], 400)
