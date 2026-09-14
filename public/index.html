@@ -281,7 +281,8 @@ function renderBoard(){
   const targets=selected?(state.legal[selected]||[]):[];
   for(const rank of ranks) for(const file of files){
     const name=file+rank, d=document.createElement('div');
-    const dark=(FILES.indexOf(file)+rank)%2===0;
+    // a1 is a dark square and h1 light, so the sum is odd on dark squares.
+    const dark=(FILES.indexOf(file)+rank)%2===1;
     d.className='sq '+(dark?'d':'l');
     if(last.includes(name)) d.classList.add('last');
     if(selected===name) d.classList.add('sel');

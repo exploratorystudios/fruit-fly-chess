@@ -264,3 +264,27 @@ class WsgiAppTest(unittest.TestCase):
         self.assertEqual(self.call('PUT', '/nope')[0], 405)
         self.assertEqual(self.call('POST', '/api/nope', {})[0], 404)
         self.assertEqual(self.call('POST', '/api/position', {'fen': 'nonsense'})[0], 400)
+
+
+class BoardColouringTest(unittest.TestCase):
+    """The page decides square colour with a parity rule. Getting it backwards
+    still looks like a chessboard, so assert it against the real convention:
+    a1 is dark, h1 is light."""
+
+    def test_parity_rule_puts_a1_on_a_dark_square(self):
+        import re
+        from pathlib import Path
+        page = (Path(__file__).resolve().parents[1] / 'public' / 'index.html').read_text()
+        match = re.search(r'const dark=\(FILES\.indexOf\(file\)\+rank\)%2===(\d);', page)
+        self.assertIsNotNone(match, 'square-colour rule not found in the page')
+        dark_when = int(match.group(1))
+        files = 'abcdefgh'
+
+        def is_dark(square):
+            return (files.index(square[0]) + int(square[1])) % 2 == dark_when
+
+        for square, expected_dark in (('a1', True), ('h1', False), ('a8', False),
+                                      ('h8', True), ('e4', False), ('d4', True)):
+            with self.subTest(square=square):
+                self.assertEqual(is_dark(square), expected_dark,
+                                 f'{square} should be {"dark" if expected_dark else "light"}')
