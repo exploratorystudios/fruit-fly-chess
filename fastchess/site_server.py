@@ -218,8 +218,8 @@ class Handler(BaseHTTPRequestHandler):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--model', default=str(DEFAULT_MODEL))
-    p.add_argument('--fly', nargs='?', const=str(ROOT / 'model' / 'fly.pt'),
-                   help='Checkpoint for the fly-connectome model, enabling /fly.html')
+    p.add_argument('--fly', nargs='?', const=str(ROOT / 'model' / 'fly.npz'),
+                   help='Weights for the fly connectome; .npz needs no PyTorch')
     p.add_argument('--port', type=int, default=8000)
     p.add_argument('--host', default='127.0.0.1')
     p.add_argument('--seconds', type=float, default=1.5)
@@ -230,12 +230,17 @@ def main(argv=None):
     Handler.engine = Engine(a.model, a.seconds, a.depth)
     Handler.engine.fly = None
     if a.fly:
-        from .fly_engine import FlyEngine
         print('loading the fly connectome…', flush=True)
-        Handler.engine.fly = FlyEngine(a.fly)
+        if a.fly.endswith('.npz'):
+            from .fly_numpy import FlyNumpy
+            Handler.engine.fly = FlyNumpy(a.fly)
+        else:
+            from .fly_engine import FlyEngine     # the PyTorch path, for comparison
+            Handler.engine.fly = FlyEngine(a.fly)
         info = Handler.engine.fly.describe()
         print(f"fly: {info['neurons']:,} neurons, {info['synapses']:,} synapses, "
-              f"{info['timesteps']} timesteps -> /fly.html", flush=True)
+              f"{info['timesteps']} timesteps, {info.get('runtime', 'torch')} runtime",
+              flush=True)
     server = ThreadingHTTPServer((a.host, a.port), Handler)
     print(f'Fly Chess — model {Handler.engine.name}, {a.seconds}s/move, max depth {a.depth}')
     print(f'Open http://{a.host}:{a.port}/   (Ctrl+C to stop)', flush=True)

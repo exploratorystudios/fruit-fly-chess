@@ -7,6 +7,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 ANATOMY = ROOT / 'public' / 'fly'
 CHECKPOINT = ROOT / 'model' / 'fly.pt'
+WEIGHTS = ROOT / 'model' / 'fly.npz'
 
 
 @unittest.skipUnless((ANATOMY / 'anatomy.json').is_file(), 'anatomy not exported')
@@ -84,3 +85,73 @@ class FlyEngineTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipUnless(WEIGHTS.is_file(), 'model/fly.npz not present')
+class FlyNumpyTest(unittest.TestCase):
+    """The deployed site runs this implementation, so it has to stand on its own
+    without PyTorch installed at all."""
+
+    @classmethod
+    def setUpClass(cls):
+        from fastchess.fly_numpy import FlyNumpy
+        cls.fly = FlyNumpy(str(WEIGHTS))
+
+    def test_runs_without_torch_imported(self):
+        import sys
+        self.assertNotIn('torch', type(self.fly).__module__)
+        import chess
+        thought = self.fly.think(chess.Board(), seed=1)
+        self.assertEqual(self.fly.describe()['runtime'], 'numpy')
+        self.assertGreater(thought['spikesTotal'], 0)
+
+    def test_raster_round_trips(self):
+        import chess
+        thought = self.fly.think(chess.Board(), seed=2)
+        packed = np.frombuffer(base64.b64decode(thought['raster']), np.uint8)
+        frames = np.unpackbits(packed.reshape(thought['timesteps'], -1), axis=1)
+        frames = frames[:, :thought['neurons']]
+        self.assertEqual(int(frames.sum()), thought['spikesTotal'])
+        self.assertEqual(frames.sum(axis=1).tolist(), thought['perTimestep'])
+
+    def test_spiking_is_sparse_and_sustained(self):
+        """A dead or saturated network would still round-trip, so check the
+        dynamics look like spiking rather than everything or nothing."""
+        import chess
+        thought = self.fly.think(chess.Board(), seed=3)
+        self.assertGreater(thought['meanRate'], .005)
+        self.assertLess(thought['meanRate'], .5)
+        self.assertTrue(all(count > 0 for count in thought['perTimestep']),
+                        'every timestep should have some activity')
+
+
+@unittest.skipUnless(WEIGHTS.is_file() and CHECKPOINT.is_file(), 'both fly weights needed')
+class FlyParityTest(unittest.TestCase):
+    """The NumPy port must fire exactly the same neurons as the trained PyTorch
+    model, or the deployed visualisation is of a different network."""
+
+    def test_rasters_are_identical(self):
+        try:
+            from fastchess.fly_engine import FlyEngine
+        except ImportError as error:
+            raise unittest.SkipTest(f'torch unavailable: {error}')
+        import chess
+        import torch
+        from fastchess.fly_numpy import FlyNumpy
+        from fastchess.fly.encoding import encode_board
+        reference, ported = FlyEngine(str(CHECKPOINT)), FlyNumpy(str(WEIGHTS))
+        for fen in (chess.STARTING_FEN,
+                    'r1bq1rk1/pp2ppbp/2np1np1/8/2BNP3/2N1B3/PPP2PPP/R2Q1RK1 w - - 0 9',
+                    '8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1'):
+            with self.subTest(fen=fen):
+                board = chess.Board(fen)
+                frames = []
+                with torch.no_grad():
+                    x = torch.from_numpy(encode_board(board)).float().unsqueeze(0)
+                    expected_logits = reference.model(x, raster=frames)[0].numpy()
+                expected = np.stack([f.numpy() for f in frames]).astype(bool)
+                got, rate = ported.simulate(encode_board(board))
+                self.assertTrue(np.array_equal(expected, got),
+                                'spike rasters differ between the two runtimes')
+                logits = ported.out_w @ rate + ported.out_b
+                self.assertLess(float(np.abs(expected_logits - logits).max()), 1e-4)

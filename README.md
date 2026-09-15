@@ -196,9 +196,15 @@ neurons are read out as a score for every from/to square pair.
 bash run.sh site --fly            # then open http://127.0.0.1:8000/
 ```
 
-With a checkpoint loaded, the **fly brain** panel on the main page draws that model
-**where it actually is**, and a *played by* selector lets the connectome take over
-the game from the evaluator. Every neuron sits
+The **fly brain** panel on the main page draws that model **where it actually is**,
+and a *played by* selector lets the connectome take over the game from the evaluator.
+
+It runs in NumPy, not PyTorch. The dynamics are only sparse accumulation and
+elementwise arithmetic — one weighted `bincount` per timestep stands in for the
+sparse matrix product — so the network needs no deep-learning runtime and deploys
+with the rest of the site. The port fires **bit-identical spike rasters** to the
+trained PyTorch model, which is asserted in the tests, and is about 5x faster
+(154 ms against 805 ms per move). Every neuron sits
 at its measured FlyWire position, joined by root id from the public v783 archive, so
 the shape on screen is the fly's brain rather than an invented layout — the central
 mass, the optic lobe and the tracts between them are all real. Synapse endpoints,
@@ -213,23 +219,23 @@ produced its move; when the evaluator is playing, it shows the connectome lookin
 the same position and says what it would have played instead — it never implies the
 brain on screen chose a move it did not.
 
-Without a checkpoint the panel still loads: the anatomy is a static 188 KiB asset, so
-even the deployed site shows the real structure, just not firing.
+If the weights are missing the panel still loads, since the anatomy is a static
+188 KiB asset — but normally they ship with it, so the deployed site fires the real
+neurons too.
 
 Be clear-eyed about its chess: it predicts the played move in 30.3% of held-out
 positions, 57.9% in its top five. It is far weaker than the small evaluator, and it
 is meant to be interesting rather than strong.
 
-The weights ship in `model/fly.pt` and the anatomy asset in `public/fly/` (188 KiB
-for 6,000 neurons and the 12,000 strongest of 697,316 synapses). Regenerate the
-asset with:
+The weights ship in `model/fly.npz` (20.9 MiB, NumPy only) and the anatomy in
+`public/fly/` (188 KiB for 6,000 neurons and the 12,000 strongest of 697,316
+synapses). Both are generated from the original PyTorch checkpoint, which is not in
+the repo because nothing needs it at runtime:
 
 ```bash
-python -m fastchess.fly_export --coordinates path/to/coordinates.csv.gz
+python -m fastchess.fly_convert --checkpoint path/to/flychess.pt
+python -m fastchess.fly_export  --coordinates path/to/coordinates.csv.gz
 ```
-
-This mode needs PyTorch, so it runs locally only and is excluded from the Vercel
-deployment.
 
 ## Deploying to Vercel
 

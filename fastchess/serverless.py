@@ -22,9 +22,15 @@ _engine = None
 def engine():
     global _engine
     if _engine is None:
+        weights = ROOT / 'model' / 'fly.npz'
         _engine = Engine(str(ROOT / 'model' / 'best.npz'),
                          seconds=float(os.environ.get('FLY_SECONDS', '1.5')),
                          depth=int(os.environ.get('FLY_DEPTH', '8')),
                          # Keep well inside the function's wall-clock limit.
                          max_seconds=float(os.environ.get('FLY_MAX_SECONDS', '4')))
+        # The connectome runs in NumPy, so it deploys alongside the evaluator.
+        _engine.fly = None
+        if weights.is_file():
+            from .fly_numpy import FlyNumpy
+            _engine.fly = FlyNumpy(str(weights))
     return _engine

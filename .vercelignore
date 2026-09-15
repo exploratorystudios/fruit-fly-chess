@@ -11,8 +11,9 @@ tests/
 reply*.txt
 kaggle-fix.txt
 
-# The fly model needs PyTorch, so it runs locally only.
+# The connectome itself deploys (model/fly.npz, NumPy only). These are the
+# PyTorch-dependent pieces, needed only to regenerate the weights locally.
 model/fly.pt
-fastchess/fly/
 fastchess/fly_engine.py
 fastchess/fly_export.py
+fastchess/fly_convert.py
