@@ -99,10 +99,11 @@ td.num{text-align:right}
 #drawer header{display:flex;align-items:center;justify-content:space-between;gap:8px;
   padding:12px 14px;border-bottom:1px solid var(--line);margin:0}
 #drawer .body{flex:1;min-height:0;display:flex;flex-direction:column;padding:12px 14px;gap:10px;
-  overflow:auto}
-#scene{width:100%;aspect-ratio:1;border:1px solid var(--line);border-radius:10px;
-  background:var(--bg);touch-action:none;cursor:grab}
-#scene:active{cursor:grabbing}
+  overflow-y:auto;overflow-x:hidden}
+#scrub{width:100%;margin:0;min-width:0}
+#brain{width:100%;aspect-ratio:1;border:1px solid var(--line);border-radius:10px;
+  background:#0b0b0f;touch-action:none;cursor:grab;display:block}
+#brain:active{cursor:grabbing}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
 .row label{display:inline-flex;align-items:center;gap:5px}
 body.drawer-open .wrap{padding-right:min(436px,94vw)}
@@ -120,6 +121,9 @@ body.drawer-open .wrap{padding-right:min(436px,94vw)}
     <div class="sub" id="modelinfo">loading…</div>
   </div>
   <div style="display:flex;gap:8px;align-items:center">
+    <label class="sub">played by
+      <select id="engine"><option value="net" selected>evaluator</option></select>
+    </label>
     <label class="sub">think
       <select id="secs">
         <option value="0.3">0.3s</option>
@@ -127,8 +131,7 @@ body.drawer-open .wrap{padding-right:min(436px,94vw)}
         <option value="4">4s</option>
       </select>
     </label>
-    <a href="/fly.html" class="chip" style="text-decoration:none;padding:7px 12px">the real fly brain →</a>
-    <button id="viz" aria-expanded="false">3D mind</button>
+    <button id="viz" aria-expanded="false">fly brain</button>
     <button id="new">New game</button>
     <button id="undo">Undo</button>
   </div>
@@ -213,30 +216,24 @@ body.drawer-open .wrap{padding-right:min(436px,94vw)}
 </div>
 </div>
 
-<aside id="drawer" aria-hidden="true" aria-label="3D activation view">
+<aside id="drawer" aria-hidden="true" aria-label="Fly connectome view">
   <header>
-    <h2 style="margin:0">Activations in 3D</h2>
-    <button id="close" aria-label="Close 3D panel">✕</button>
+    <h2 style="margin:0">The fly brain</h2>
+    <button id="close" aria-label="Close panel">✕</button>
   </header>
   <div class="body">
-    <canvas id="scene"></canvas>
+    <canvas id="brain"></canvas>
     <div class="row">
       <button class="chip" id="spin" aria-pressed="true">auto-rotate</button>
-      <button class="chip" id="edges" aria-pressed="true">connections</button>
-      <button class="chip" id="inputs" aria-pressed="true">inputs</button>
+      <button class="chip" id="edges" aria-pressed="true">synapses</button>
+      <button class="chip" id="colour" aria-pressed="false">by region</button>
+      <button class="chip" id="animate" aria-pressed="true">animate</button>
       <button class="chip" id="reset">reset view</button>
     </div>
-    <div class="row">
-      <span><i class="swatch" style="background:var(--accent)"></i>firing</span>
-      <span><i class="swatch" style="background:var(--line)"></i>silent</span>
-      <span><i class="swatch" style="background:var(--warn)"></i>negative weight</span>
-    </div>
-    <p class="note" style="margin:0">Drag to rotate, scroll to zoom. Height and brightness are
-    activation strength. Rear plane: the input features that are switched on in this position.
-    Middle planes: the 128 and 32 hidden neurons. Front: the single output.
-    Connections are the real layer-2 weights, drawn only where both ends are active — the
-    strongest 900 of 4,096.</p>
-    <div class="row" id="vizstats" style="font-variant-numeric:tabular-nums"></div>
+    <div class="row" id="flystats" style="font-variant-numeric:tabular-nums"></div>
+    <input id="scrub" type="range" min="0" max="31" value="0" style="width:100%">
+    <p class="note" id="flynote" style="margin:0">Loading the connectome…</p>
+    <p class="note" id="provenance" style="margin:0"></p>
   </div>
 </aside>
 
@@ -396,6 +393,7 @@ function describeEnd(){
 }
 async function refresh(){
   renderBoard(); paintEvaluation(); await paintCandidates();
+  observe();
   const done=describeEnd();
   setStatus(done||(state.turn==='white'?'Your move.':'Engine to move — press “Let it move”.'));
   $('go').disabled=state.gameOver; $('undo').disabled=history.length===0;
@@ -417,14 +415,24 @@ async function think(){
   setStatus('Thinking…','thinking');
   const previous=state.fen;
   try{
-    const seconds=parseFloat($('secs').value);
-    const {thought,position}=await api('/api/think',{fen:previous,seconds});
-    history.push(previous);
-    state=position; paintThought(thought);
-    await refresh();
-    const done=describeEnd();
-    setStatus(done||`Played ${thought.san} — depth ${thought.depth}, `+
-      `${thought.nodes.toLocaleString()} positions searched. Your move.`);
+    if($('engine').value==='fly'){
+      const {thought,position}=await api('/api/fly-think',{fen:previous});
+      history.push(previous);
+      state=position; setFly({...thought, fen:previous}, true);
+      await refresh();
+      const done=describeEnd();
+      setStatus(done||`The connectome played ${thought.san} — `+
+        `${thought.spikesTotal.toLocaleString()} spikes across ${thought.timesteps} timesteps.`);
+    } else {
+      const seconds=parseFloat($('secs').value);
+      const {thought,position}=await api('/api/think',{fen:previous,seconds});
+      history.push(previous);
+      state=position; paintThought(thought);
+      await refresh();
+      const done=describeEnd();
+      setStatus(done||`Played ${thought.san} — depth ${thought.depth}, `+
+        `${thought.nodes.toLocaleString()} positions searched. Your move.`);
+    }
   }catch(err){ setStatus('Error: '+err.message); }
   busy=false; $('go').disabled=state.gameOver;
 }
@@ -440,164 +448,126 @@ $('undo').onclick=async()=>{ if(!history.length) return;
 /* ---------- 3D activation view ----------------------------------------
    Hand-rolled projection on a 2D canvas: no library, so the page still works
    with no network at all. Painter's algorithm — sort by depth, draw far first. */
+/* ---------- the fly connectome, at its real FlyWire coordinates ----------
+   Hand-rolled projection on a 2D canvas: no library, so the page still works
+   offline. Positions, synapses and spikes are all measured, never invented. */
+let flyRaster=null, flyThought=null, flyStep=0, flyAvailable=false;
+
 const Viz = (() => {
-  const canvas=$('scene'), ctx=canvas.getContext('2d');
-  let W=0,H=0,dpr=1;
-  let yaw=-0.95, pitch=-0.26, zoom=1.0, spin=true, showEdges=true, showInputs=true;
-  let weights=null, frame=0, running=false;
-  const PLANES={in:-148, h1:-52, h2:58, out:148};
+  const canvas=$('brain'), ctx=canvas.getContext('2d');
+  let W=0,H=0,dpr=1,yaw=.6,pitch=-.15,zoom=1.5;
+  let spin=true, showEdges=true, byRegion=false, animate=true;
+  let pos=null,role=null,group=null,ePre=null,ePost=null,eSign=null,meta=null;
+  let frame=0,last=0,running=false,loading=null;
+  const PALETTE=['#6fbf8f','#e08a6c','#7aa7d6','#d6a77a','#b48ad6','#8ad6c7','#d6d07a','#d67a9e'];
 
-  function resize(){
-    const rect=canvas.getBoundingClientRect();
-    dpr=Math.min(window.devicePixelRatio||1, 2);
-    W=Math.max(1,Math.round(rect.width)); H=Math.max(1,Math.round(rect.height));
-    canvas.width=W*dpr; canvas.height=H*dpr;
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-  }
+  function css(name){ return getComputedStyle(document.body).getPropertyValue(name).trim(); }
+  function resize(){ const r=canvas.getBoundingClientRect();
+    dpr=Math.min(devicePixelRatio||1,2); W=Math.max(1,Math.round(r.width)); H=Math.max(1,Math.round(r.height));
+    canvas.width=W*dpr; canvas.height=H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); }
   function project(x,y,z){
-    const cy=Math.cos(yaw), sy=Math.sin(yaw);
-    let X=x*cy - z*sy, Z=x*sy + z*cy;
-    const cp=Math.cos(pitch), sp=Math.sin(pitch);
-    let Y=y*cp - Z*sp; Z=y*sp + Z*cp;
-    const focal=520, depth=focal+Z;
-    if(depth<40) return null;
-    const k=focal/depth*zoom;
-    return {x:W/2 + X*k, y:H/2 - Y*k, z:Z, k};
+    const cy=Math.cos(yaw),sy=Math.sin(yaw);
+    let X=x*cy-z*sy, Z=x*sy+z*cy;
+    const cp=Math.cos(pitch),sp=Math.sin(pitch);
+    let Y=y*cp-Z*sp; Z=y*sp+Z*cp;
+    const f=2.6, d=f+Z; if(d<.25) return null;
+    const k=f/d*zoom*Math.min(W,H)*.42;
+    return {x:W/2+X*k, y:H/2-Y*k, z:Z, k:k/(Math.min(W,H)*.42)};
   }
-  function gridPoint(i,cols,spread,plane,rows){
-    const col=i%cols, row=Math.floor(i/cols);
-    return {x:(col-(cols-1)/2)*spread, y:((rows-1)/2-row)*spread, z:plane};
+  async function load(){
+    if(pos) return; if(loading) return loading;
+    loading=(async()=>{
+      const m=await fetch('/fly/anatomy.json').then(r=>r.json());
+      const buf=await fetch('/fly/anatomy.bin').then(r=>r.arrayBuffer());
+      const a=m.arrays; meta=m;
+      pos=new Float32Array(buf,a.positions.offset,a.positions.length);
+      role=new Uint8Array(buf,a.role.offset,a.role.length);
+      group=new Uint8Array(buf,a.group.offset,a.group.length);
+      ePre=new Uint16Array(buf,a.edgePre.offset,a.edgePre.length);
+      ePost=new Uint16Array(buf,a.edgePost.offset,a.edgePost.length);
+      eSign=new Int8Array(buf,a.edgeSign.offset,a.edgeSign.length);
+      $('provenance').textContent=
+        `${m.neurons.toLocaleString()} neurons at their measured FlyWire positions, `+
+        `${m.synapsesDrawn.toLocaleString()} of ${m.synapsesTotal.toLocaleString()} synapses drawn, `+
+        `${m.groups.length} neuropils. ${m.source}.`;
+    })();
+    return loading;
   }
-  // Nodes for the current position, with activation carried through.
-  function build(){
-    const ev=state&&state.evaluation; if(!ev) return null;
-    const h1=ev.hidden1, h2=ev.hidden2;
-    if(!h1.length) return null;
-    const peak1=Math.max(...h1,1e-6), peak2=Math.max(...h2,1e-6);
-    const nodes=[];
-    h1.forEach((v,i)=>{ const p=gridPoint(i,16,17,PLANES.h1,8);
-      nodes.push({...p, y:p.y+ (v/peak1)*16, v, t:v/peak1, r:3.1, layer:'h1', i}); });
-    h2.forEach((v,i)=>{ const p=gridPoint(i,8,30,PLANES.h2,4);
-      nodes.push({...p, y:p.y+ (v/peak2)*22, v, t:v/peak2, r:5.2, layer:'h2', i}); });
-    nodes.push({x:0,y:0,z:PLANES.out, v:ev.correction, t:1, r:8, layer:'out', i:0});
-    if(showInputs){
-      // Only the features that are actually on: ~30 of 781.
-      ev.features.filter(f=>f<768).forEach(f=>{
-        const plane=Math.floor(f/64), sq=f%64;
-        const col=plane%4, row=Math.floor(plane/4);
-        const fx=sq%8, fy=Math.floor(sq/8);
-        nodes.push({x:(col-1.5)*48 + (fx-3.5)*5.5, y:(1-row)*48 + (fy-3.5)*5.5,
-                    z:PLANES.in, v:1, t:1, r:2.4, layer:'in', i:f, them:(plane%2===1)});
-      });
-    }
-    return {nodes,h1,h2,peak1,peak2};
-  }
-  function strongEdges(data){
-    if(!weights||!showEdges) return [];
-    const {w2}=weights, out=[];
-    for(let i=0;i<128;i++){
-      const a=data.h1[i]; if(a<=0) continue;
-      for(let j=0;j<32;j++){
-        if(data.h2[j]<=0) continue;
-        const w=w2[i*32+j], m=Math.abs(w)*a;
-        if(m>0.05) out.push({i,j,w,m});
-      }
-    }
-    out.sort((p,q)=>q.m-p.m);
-    return out.slice(0,900);
-  }
-  function draw(){
-    if(!running) return;
+  function draw(now){
     frame=requestAnimationFrame(draw);
-    if(spin) yaw+=0.0032;
-    const data=build();
+    if(!pos||!running) return;
+    if(spin) yaw+=.0022;
+    if(animate && flyThought && now-last>70){ last=now;
+      flyStep=(flyStep+1)%flyThought.timesteps; $('scrub').value=flyStep; note(); }
     ctx.clearRect(0,0,W,H);
-    if(!data){ ctx.fillStyle=css('--muted'); ctx.font='13px system-ui';
-      ctx.fillText('no activations yet', 14, 24); return; }
-    // Layer outlines first: without them the projected points read as one cloud.
-    const frames=[[PLANES.in,100,76,'781 inputs (active)'],
-                  [PLANES.h1,146,78,'128 hidden'],
-                  [PLANES.h2,130,68,'32 hidden'],
-                  [PLANES.out,26,26,'output']];
-    ctx.lineWidth=1;
-    for(const [z,hw,hh,label] of frames){
-      const corners=[[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].map(([x,y])=>project(x,y,z));
-      if(corners.some(c=>!c)) continue;
-      ctx.strokeStyle=css('--muted'); ctx.globalAlpha=.45;
-      ctx.setLineDash([4,4]);
-      ctx.beginPath(); ctx.moveTo(corners[0].x,corners[0].y);
-      for(let i=1;i<4;i++) ctx.lineTo(corners[i].x,corners[i].y);
-      ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
-      const tag=project(-hw,hh,z);
-      if(tag){ ctx.globalAlpha=1; ctx.fillStyle=css('--muted');
-        ctx.font='600 11px ui-sans-serif,system-ui';
-        // Narrow planes sit near the canvas edge; right-align so the text stays on.
-        ctx.textAlign = hw < 60 ? 'right' : 'left';
-        ctx.fillText(label, tag.x + (hw < 60 ? -4 : 4), tag.y-6);
-        ctx.textAlign='left'; }
-    }
-    ctx.globalAlpha=1;
-
-    const pos={};
-    for(const n of data.nodes){ const p=project(n.x,n.y,n.z); if(p) pos[n.layer+':'+n.i]={...p,n}; }
-    // edges first, behind the nodes
-    const edges=strongEdges(data);
-    if(edges.length){
-      const peak=edges[0].m||1;
-      for(const e of edges){
-        const a=pos['h1:'+e.i], b=pos['h2:'+e.j]; if(!a||!b) continue;
-        ctx.strokeStyle=e.w>=0?css('--accent'):css('--warn');
-        ctx.globalAlpha=Math.min(.5, .05+.45*e.m/peak);
-        ctx.lineWidth=Math.max(.4, 1.1*e.m/peak);
-        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
-      }
-      // layer 2 -> output
-      for(let j=0;j<32;j++){
-        const a=pos['h2:'+j], b=pos['out:0']; if(!a||!b||data.h2[j]<=0) continue;
-        const w=weights.w3[j];
-        ctx.strokeStyle=w>=0?css('--accent'):css('--warn');
-        ctx.globalAlpha=Math.min(.6,.1+Math.abs(w)*data.h2[j]/(data.peak2||1));
-        ctx.lineWidth=.9; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+    const n=role.length, sx=new Float32Array(n), sy=new Float32Array(n),
+          sk=new Float32Array(n), ok=new Uint8Array(n);
+    for(let i=0;i<n;i++){ const p=project(pos[i*3],pos[i*3+1],pos[i*3+2]);
+      if(p){ sx[i]=p.x; sy[i]=p.y; sk[i]=p.k; ok[i]=1; } }
+    if(showEdges){
+      for(const sign of [1,-1]){
+        ctx.beginPath();
+        for(let e=0;e<ePre.length;e++){
+          if(eSign[e]!==sign) continue;
+          const a=ePre[e], b=ePost[e]; if(!ok[a]||!ok[b]) continue;
+          ctx.moveTo(sx[a],sy[a]); ctx.lineTo(sx[b],sy[b]);
+        }
+        ctx.strokeStyle=sign>0?'#6fbf8f':'#e08a6c';
+        ctx.globalAlpha=.09; ctx.lineWidth=.55; ctx.stroke();
       }
       ctx.globalAlpha=1;
     }
-    const drawn=Object.values(pos).sort((a,b)=>b.z-a.z);
-    for(const p of drawn){
-      const n=p.n, r=Math.max(.8, n.r*p.k);
-      if(n.layer==='in'){
-        ctx.fillStyle=n.them?css('--warn'):css('--accent'); ctx.globalAlpha=.75;
-      } else if(n.layer==='out'){
-        ctx.fillStyle=n.v>=0?css('--accent'):css('--warn'); ctx.globalAlpha=1;
-      } else {
-        ctx.fillStyle=n.v>0?css('--accent'):css('--line');
-        ctx.globalAlpha=n.v>0?(.3+.7*n.t):.5;
-      }
-      ctx.beginPath(); ctx.arc(p.x,p.y,r,0,6.2832); ctx.fill();
+    const live=flyRaster?flyRaster[flyStep]:null;
+    for(let i=0;i<n;i++){
+      if(!ok[i]||(live&&live[i])) continue;
+      ctx.fillStyle=byRegion?PALETTE[group[i]%PALETTE.length]
+        :(role[i]&2?'#e08a6c':role[i]&1?'#6fbf8f':'#6b6b7a');
+      ctx.globalAlpha=byRegion?.75:(role[i]?.8:.5);
+      const s=Math.max(1.1,2.1*sk[i]);
+      ctx.fillRect(sx[i]-s/2,sy[i]-s/2,s,s);
+    }
+    if(live){
+      ctx.globalAlpha=1; ctx.fillStyle='#ffd166';
+      for(let i=0;i<n;i++){ if(!ok[i]||!live[i]) continue;
+        const s=Math.max(1.6,3.2*sk[i]);
+        ctx.beginPath(); ctx.arc(sx[i],sy[i],s/2,0,6.2832); ctx.fill(); }
     }
     ctx.globalAlpha=1;
-    $('vizstats').textContent=
-      `${data.h1.filter(v=>v>0).length}/128 · ${data.h2.filter(v=>v>0).length}/32 firing`+
-      (edges.length?` · ${edges.length} connections drawn`:'');
   }
-  function css(name){ return getComputedStyle(document.body).getPropertyValue(name).trim(); }
-
-  // drag to rotate, wheel to zoom
-  let dragging=false, lastX=0, lastY=0;
-  canvas.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;
-    canvas.setPointerCapture(e.pointerId); spin=false; $('spin').setAttribute('aria-pressed','false');});
-  canvas.addEventListener('pointermove',e=>{ if(!dragging) return;
-    yaw+=(e.clientX-lastX)*0.008; pitch=Math.max(-1.4,Math.min(1.4,pitch+(e.clientY-lastY)*0.006));
-    lastX=e.clientX; lastY=e.clientY; });
-  canvas.addEventListener('pointerup',e=>{dragging=false;});
-  canvas.addEventListener('wheel',e=>{e.preventDefault();
-    zoom=Math.max(.45,Math.min(3, zoom*(e.deltaY>0?0.92:1.08)));},{passive:false});
-
+  function note(){
+    if(!flyThought){
+      $('flystats').textContent='';
+      $('flynote').textContent=flyAvailable
+        ? 'Waiting for the connectome to look at this position…'
+        : 'Structure only. Start the server with --fly to see it fire.';
+      return;
+    }
+    const chose=flyThought.chose;
+    $('flystats').textContent=
+      `${flyThought.spikesTotal.toLocaleString()} spikes · `+
+      `step ${flyStep+1}/${flyThought.timesteps} · `+
+      `${flyThought.perTimestep[flyStep].toLocaleString()} firing`;
+    $('flynote').textContent=chose
+      ? `It played ${flyThought.san}. No search at all: the readout scores every from/to `+
+        `square pair and it plays straight from that.`
+      : `The evaluator is playing this game. Shown here is the connectome looking at the `+
+        `same position — its own choice would be ${flyThought.san}.`;
+  }
+  $('scrub').oninput=e=>{ flyStep=+e.target.value; note(); };
   function chip(id,get,set){ const el=$(id);
-    el.onclick=()=>{ set(!get()); el.setAttribute('aria-pressed', get()?'true':'false'); }; }
-  chip('spin',()=>spin,v=>spin=v);
-  chip('edges',()=>showEdges,v=>showEdges=v);
-  chip('inputs',()=>showInputs,v=>showInputs=v);
-  $('reset').onclick=()=>{ yaw=-0.95; pitch=-0.26; zoom=1.0; };
+    el.onclick=()=>{ set(!get()); el.setAttribute('aria-pressed',get()?'true':'false'); }; }
+  chip('spin',()=>spin,v=>spin=v); chip('edges',()=>showEdges,v=>showEdges=v);
+  chip('colour',()=>byRegion,v=>byRegion=v); chip('animate',()=>animate,v=>animate=v);
+  $('reset').onclick=()=>{ yaw=.6; pitch=-.15; zoom=1.5; };
+  let drag=false,lx=0,ly=0;
+  canvas.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;
+    canvas.setPointerCapture(e.pointerId); spin=false; $('spin').setAttribute('aria-pressed','false');});
+  canvas.addEventListener('pointermove',e=>{ if(!drag) return;
+    yaw+=(e.clientX-lx)*.008; pitch=Math.max(-1.4,Math.min(1.4,pitch+(e.clientY-ly)*.006));
+    lx=e.clientX; ly=e.clientY; });
+  canvas.addEventListener('pointerup',()=>drag=false);
+  canvas.addEventListener('wheel',e=>{e.preventDefault();
+    zoom=Math.max(.4,Math.min(4,zoom*(e.deltaY>0?.92:1.08)));},{passive:false});
 
   return {
     async open(){
@@ -605,8 +575,9 @@ const Viz = (() => {
       $('drawer').classList.add('open'); $('drawer').setAttribute('aria-hidden','false');
       $('viz').setAttribute('aria-expanded','true');
       try{ localStorage.setItem('flyviz','1'); }catch(e){}
-      if(!weights){ try{ weights=await api('/api/weights',{}); }catch(e){ weights=null; } }
-      resize(); if(!running){ running=true; draw(); }
+      await load(); resize(); note();
+      if(!running){ running=true; requestAnimationFrame(draw); }
+      observe();
     },
     close(){
       document.body.classList.remove('drawer-open');
@@ -616,9 +587,43 @@ const Viz = (() => {
       running=false; cancelAnimationFrame(frame);
     },
     get isOpen(){ return running; },
-    resize,
+    resize, note,
   };
 })();
+
+function decodeRaster(thought){
+  const bytes=Uint8Array.from(atob(thought.raster),c=>c.charCodeAt(0));
+  const perRow=Math.ceil(thought.neurons/8);
+  const out=[];
+  for(let t=0;t<thought.timesteps;t++){
+    const bits=new Uint8Array(thought.neurons);
+    for(let i=0;i<thought.neurons;i++) bits[i]=(bytes[t*perRow+(i>>3)]>>(7-(i&7)))&1;
+    out.push(bits);
+  }
+  return out;
+}
+function setFly(thought, chose){
+  flyThought={...thought, chose}; flyRaster=decodeRaster(thought); flyStep=0;
+  $('scrub').max=thought.timesteps-1; $('scrub').value=0; Viz.note();
+}
+let observing=null;
+async function observe(){
+  // Costs a full 32-timestep simulation, so only while the panel is open.
+  if(!flyAvailable || !Viz.isOpen || !state || state.gameOver) return;
+  // When the connectome is the one playing, keep showing the activity that
+  // actually produced its move rather than overwriting it with a fresh look at
+  // the position it just created.
+  if($('engine').value==='fly' && flyThought) return;
+  const fen=state.fen;
+  if(flyThought && flyThought.fen===fen) return;
+  if(observing===fen) return;
+  observing=fen;
+  try{
+    const {thought}=await api('/api/fly-observe',{fen});
+    if(state && state.fen===fen) setFly({...thought, fen}, false);
+  }catch(e){ /* the panel keeps showing structure */ }
+  finally{ observing=null; }
+}
 $('viz').onclick=()=>Viz.isOpen?Viz.close():Viz.open();
 $('close').onclick=()=>Viz.close();
 window.addEventListener('resize',()=>{ if(Viz.isOpen) Viz.resize(); });
@@ -629,6 +634,16 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&Viz.isOpen) Viz.cl
     const info=await api('/api/info',{});
     $('modelinfo').textContent=
       `104,257-parameter network · ${info.model} · alpha-beta search, max depth ${info.depth}`;
+    try{
+      const fly=await api('/api/fly-info',{});
+      flyAvailable=true;
+      const option=document.createElement('option');
+      option.value='fly'; option.textContent='fly brain (no search)';
+      $('engine').appendChild(option);
+      $('modelinfo').textContent+=
+        ` · fly connectome available: ${fly.neurons.toLocaleString()} neurons, ${fly.timesteps} timesteps`;
+    }catch(e){ flyAvailable=false; }
+    $('engine').onchange=()=>{ $('secs').disabled=$('engine').value==='fly'; };
     state=await api('/api/position',{});
     await refresh();
     let remembered=null;

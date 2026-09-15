@@ -141,6 +141,13 @@ def dispatch(engine, action, request):
         if action == 'fly-info':
             fly = getattr(engine, 'fly', None)
             return 200, fly.describe() if fly else {'error': 'fly model not loaded'}
+        if action == 'fly-observe':
+            # Run the connectome on this position without playing its move, so the
+            # view can show what it fires even while the evaluator is choosing.
+            fly = getattr(engine, 'fly', None)
+            if fly is None:
+                return 503, {'error': 'fly model not loaded'}
+            return 200, {'thought': fly.think(board, request.get('seed'))}
         if action == 'fly-think':
             fly = getattr(engine, 'fly', None)
             if fly is None:

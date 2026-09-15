@@ -193,10 +193,12 @@ timesteps of leaky integrate-and-fire dynamics, and the 1,024 highest in-degree
 neurons are read out as a score for every from/to square pair.
 
 ```bash
-bash run.sh site --fly            # then open http://127.0.0.1:8137/fly.html
+bash run.sh site --fly            # then open http://127.0.0.1:8000/
 ```
 
-`/fly.html` plays that model and draws it **where it actually is**. Every neuron sits
+With a checkpoint loaded, the **fly brain** panel on the main page draws that model
+**where it actually is**, and a *played by* selector lets the connectome take over
+the game from the evaluator. Every neuron sits
 at its measured FlyWire position, joined by root id from the public v783 archive, so
 the shape on screen is the fly's brain rather than an invented layout — the central
 mass, the optic lobe and the tracts between them are all real. Synapse endpoints,
@@ -205,8 +207,14 @@ and the neurons that light up are the ones that genuinely fired: the full
 6,000 x 32 spike raster is bit-packed and sent with each move, so the animation is
 the network's own activity, not a re-simulation or a summary.
 
-Colour by role (sensory, motor, interneuron) or by neuropil, scrub the 32 timesteps
-by hand, and read the move scores straight off the readout.
+Colour by role (sensory, motor, interneuron) or by neuropil, and scrub the 32
+timesteps by hand. When the connectome is playing, the panel shows the activity that
+produced its move; when the evaluator is playing, it shows the connectome looking at
+the same position and says what it would have played instead — it never implies the
+brain on screen chose a move it did not.
+
+Without a checkpoint the panel still loads: the anatomy is a static 188 KiB asset, so
+even the deployed site shows the real structure, just not firing.
 
 Be clear-eyed about its chess: it predicts the played move in 30.3% of held-out
 positions, 57.9% in its top five. It is far weaker than the small evaluator, and it

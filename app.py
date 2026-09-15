@@ -18,7 +18,8 @@ ROOT = Path(__file__).resolve().parent
 PUBLIC = ROOT / 'public'
 CONTENT_TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript',
                  '.css': 'text/css', '.json': 'application/json',
-                 '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon'}
+                 '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon',
+                 '.bin': 'application/octet-stream'}
 
 
 def reply(start_response, status, body, content_type, cache='no-store'):
@@ -61,7 +62,7 @@ def app(environ, start_response):
     name = 'index.html' if path in ('/', '/index.html') else path.lstrip('/')
     target = (PUBLIC / name).resolve()
     # Never serve outside public/, whatever the request path contains.
-    if target.parent != PUBLIC.resolve() or not target.is_file():
+    if not target.is_relative_to(PUBLIC.resolve()) or not target.is_file():
         return reply(start_response, 404, b'Not found', 'text/plain; charset=utf-8')
     body = b'' if method == 'HEAD' else target.read_bytes()
     return reply(start_response, 200, body,
