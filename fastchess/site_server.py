@@ -138,6 +138,16 @@ def dispatch(engine, action, request):
             if thought['move']:
                 board.push(chess.Move.from_uci(thought['move']))
             return 200, {'thought': thought, 'position': engine.position(board)}
+        if action == 'fly-info':
+            fly = getattr(engine, 'fly', None)
+            return 200, fly.describe() if fly else {'error': 'fly model not loaded'}
+        if action == 'fly-think':
+            fly = getattr(engine, 'fly', None)
+            if fly is None:
+                return 503, {'error': 'start the server with --fly <checkpoint>'}
+            thought = fly.think(board, request.get('seed'))
+            board.push(chess.Move.from_uci(thought['move']))
+            return 200, {'thought': thought, 'position': engine.position(board)}
         if action == 'weights':
             weights = engine.evaluator.weights
             if weights is None:
@@ -170,12 +180,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         name = 'index.html' if self.path in ('/', '/index.html') else self.path.lstrip('/')
         target = (PUBLIC / name).resolve()
-        if target.parent != PUBLIC.resolve() or not target.is_file():
+        if not target.is_relative_to(PUBLIC.resolve()) or not target.is_file():
             self.send_error(404)
             return
         body = target.read_bytes()
         kind = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript',
-                '.css': 'text/css'}.get(target.suffix, 'application/octet-stream')
+                '.css': 'text/css', '.json': 'application/json'}.get(
+                    target.suffix, 'application/octet-stream')
         self.send_response(200)
         self.send_header('Content-Type', kind)
         self.send_header('Content-Length', str(len(body)))
@@ -200,6 +211,8 @@ class Handler(BaseHTTPRequestHandler):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--model', default=str(DEFAULT_MODEL))
+    p.add_argument('--fly', nargs='?', const=str(ROOT / 'model' / 'fly.pt'),
+                   help='Checkpoint for the fly-connectome model, enabling /fly.html')
     p.add_argument('--port', type=int, default=8000)
     p.add_argument('--host', default='127.0.0.1')
     p.add_argument('--seconds', type=float, default=1.5)
@@ -208,6 +221,14 @@ def main(argv=None):
     if not Path(a.model).exists():
         p.error(f'No model at {a.model}')
     Handler.engine = Engine(a.model, a.seconds, a.depth)
+    Handler.engine.fly = None
+    if a.fly:
+        from .fly_engine import FlyEngine
+        print('loading the fly connectome…', flush=True)
+        Handler.engine.fly = FlyEngine(a.fly)
+        info = Handler.engine.fly.describe()
+        print(f"fly: {info['neurons']:,} neurons, {info['synapses']:,} synapses, "
+              f"{info['timesteps']} timesteps -> /fly.html", flush=True)
     server = ThreadingHTTPServer((a.host, a.port), Handler)
     print(f'Fly Chess — model {Handler.engine.name}, {a.seconds}s/move, max depth {a.depth}')
     print(f'Open http://{a.host}:{a.port}/   (Ctrl+C to stop)', flush=True)

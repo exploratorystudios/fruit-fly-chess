@@ -10,3 +10,9 @@ tests/
 *.log
 reply*.txt
 kaggle-fix.txt
+
+# The fly model needs PyTorch, so it runs locally only.
+model/fly.pt
+fastchess/fly/
+fastchess/fly_engine.py
+fastchess/fly_export.py

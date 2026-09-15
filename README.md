@@ -182,6 +182,47 @@ returns the intermediate values and a test asserts it agrees with `Evaluator.__c
 Stdlib only, no build step and no internet; it binds to localhost.
 
 
+## The actual fly brain
+
+There are two networks in this repo and they are not the same thing. The one that
+plays well is the 104,257-parameter evaluator above. The other is the reason the
+project is called what it is: a spiking model built on a **6,000-neuron subgraph of
+the FlyWire connectome**, the complete adult *Drosophila* brain. It has no search at
+all — 773 board features drive 1,024 sensory neurons, the connectome runs for 32
+timesteps of leaky integrate-and-fire dynamics, and the 1,024 highest in-degree
+neurons are read out as a score for every from/to square pair.
+
+```bash
+bash run.sh site --fly            # then open http://127.0.0.1:8137/fly.html
+```
+
+`/fly.html` plays that model and draws it **where it actually is**. Every neuron sits
+at its measured FlyWire position, joined by root id from the public v783 archive, so
+the shape on screen is the fly's brain rather than an invented layout — the central
+mass, the optic lobe and the tracts between them are all real. Synapse endpoints,
+Dale's-law signs and the learned per-synapse gains come from the trained checkpoint,
+and the neurons that light up are the ones that genuinely fired: the full
+6,000 x 32 spike raster is bit-packed and sent with each move, so the animation is
+the network's own activity, not a re-simulation or a summary.
+
+Colour by role (sensory, motor, interneuron) or by neuropil, scrub the 32 timesteps
+by hand, and read the move scores straight off the readout.
+
+Be clear-eyed about its chess: it predicts the played move in 30.3% of held-out
+positions, 57.9% in its top five. It is far weaker than the small evaluator, and it
+is meant to be interesting rather than strong.
+
+The weights ship in `model/fly.pt` and the anatomy asset in `public/fly/` (188 KiB
+for 6,000 neurons and the 12,000 strongest of 697,316 synapses). Regenerate the
+asset with:
+
+```bash
+python -m fastchess.fly_export --coordinates path/to/coordinates.csv.gz
+```
+
+This mode needs PyTorch, so it runs locally only and is excluded from the Vercel
+deployment.
+
 ## Deploying to Vercel
 
 `app.py` is a plain WSGI application — Vercel's Python runtime loads one top-level

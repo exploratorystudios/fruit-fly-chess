@@ -1,0 +1,98 @@
+{
+  "source": "FlyWire FAFB v783 \u2014 complete adult female brain connectome",
+  "neurons": 6000,
+  "synapsesTotal": 697316,
+  "synapsesDrawn": 12000,
+  "timesteps": 32,
+  "sensory": 1024,
+  "motor": 1024,
+  "valTop1": 0.3028094951923077,
+  "valTop5": 0.5793269230769231,
+  "groups": [
+    "AL",
+    "AMMC",
+    "AOTU",
+    "AVLP",
+    "CRE",
+    "EB",
+    "FB",
+    "FLA",
+    "GA",
+    "GNG",
+    "GOR",
+    "IB",
+    "ICL",
+    "IPS",
+    "LAL",
+    "LH",
+    "LO",
+    "LOP",
+    "MB_CA",
+    "MB_ML",
+    "MB_PED",
+    "MB_VL",
+    "ME",
+    "NO",
+    "PB",
+    "PLP",
+    "PRW",
+    "PVLP",
+    "SAD",
+    "SCL",
+    "SIP",
+    "SLP",
+    "SMP",
+    "SPS",
+    "VES",
+    "WED"
+  ],
+  "arrays": {
+    "positions": {
+      "offset": 0,
+      "length": 18000,
+      "dtype": "float32"
+    },
+    "role": {
+      "offset": 72000,
+      "length": 6000,
+      "dtype": "uint8"
+    },
+    "group": {
+      "offset": 78000,
+      "length": 6000,
+      "dtype": "uint8"
+    },
+    "edgePre": {
+      "offset": 84000,
+      "length": 12000,
+      "dtype": "uint16"
+    },
+    "edgePost": {
+      "offset": 108000,
+      "length": 12000,
+      "dtype": "uint16"
+    },
+    "edgeSign": {
+      "offset": 132000,
+      "length": 12000,
+      "dtype": "int8"
+    },
+    "edgeWeight": {
+      "offset": 144000,
+      "length": 12000,
+      "dtype": "float32"
+    }
+  },
+  "boundsNm": {
+    "min": [
+      192512.0,
+      78120.0,
+      640.0
+    ],
+    "max": [
+      857028.0,
+      416496.0,
+      268840.0
+    ]
+  }
+}

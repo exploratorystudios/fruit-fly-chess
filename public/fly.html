@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fly Chess — the actual brain</title>
+<style>
+:root{--bg:#f6f5f2;--panel:#fffefb;--ink:#1b1a17;--muted:#6c6862;--line:#dedad2;
+ --light:#e8dfc8;--dark:#9c7f5c;--accent:#2f6f4e;--warn:#a4462d;--spark:#ffd166;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+ --bg:#101014;--panel:#1a1a1f;--ink:#eceae5;--muted:#9a958c;--line:#2e2e36;
+ --light:#e8dfc8;--dark:#9c7f5c;--accent:#6fbf8f;--warn:#e08a6c;--spark:#ffd166;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,sans-serif}
+.wrap{max-width:1500px;margin:0 auto;padding-block:18px;padding-left:16px;padding-right:16px}
+h1{font-size:19px;margin:0}
+h2{font-size:11.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0 0 9px;font-weight:600}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;justify-content:space-between;
+ margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.sub{color:var(--muted);font-size:12.5px}
+a{color:var(--accent)}
+.grid{display:grid;grid-template-columns:minmax(320px,.85fr) minmax(420px,1.15fr);gap:16px;align-items:start}
+@media (max-width:1040px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px;margin-bottom:14px}
+#board{width:100%;max-width:520px;margin:0 auto;aspect-ratio:1;display:grid;
+ grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);
+ border:1px solid var(--line);border-radius:8px;overflow:hidden;container-type:inline-size}
+.sq{position:relative;display:flex;align-items:center;justify-content:center;font-size:min(9vw,40px);
+ line-height:1;cursor:pointer;user-select:none}
+@supports (font-size:1cqw){.sq{font-size:9.2cqw}}
+.sq.l{background:var(--light)}.sq.d{background:var(--dark)}
+.sq.sel{outline:3px solid var(--accent);outline-offset:-3px}
+.sq.last{box-shadow:inset 0 0 0 3px color-mix(in srgb,var(--accent) 45%,transparent)}
+.sq .p{pointer-events:none}
+.sq .p.w{color:#fffdf8;-webkit-text-stroke:1.6px #3a3128}
+.sq .p.b{color:#1c1815;-webkit-text-stroke:1.6px #efe9dc}
+.dot{position:absolute;width:26%;height:26%;border-radius:50%;
+ background:color-mix(in srgb,var(--accent) 55%,transparent);pointer-events:none}
+button{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--line);
+ background:var(--panel);color:var(--ink);cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:default}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+#brain{width:100%;aspect-ratio:1.15;border:1px solid var(--line);border-radius:10px;
+ background:#0b0b0f;touch-action:none;cursor:grab;display:block}
+#brain:active{cursor:grabbing}
+.chip{padding:5px 9px;border-radius:999px;border:1px solid var(--line);background:var(--bg);
+ font-size:11.5px;cursor:pointer}
+.chip[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:9px}
+.stat{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:7px 9px}
+.stat b{display:block;font-size:16px;font-variant-numeric:tabular-nums;font-weight:600}
+.stat span{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+td,th{text-align:left;padding:3px 6px;border-bottom:1px solid var(--line);font-size:12.5px}
+th{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+td.num{text-align:right}
+.note{font-size:11.5px;color:var(--muted);margin-top:8px}
+#status{margin-top:9px;min-height:20px;font-size:13px}
+.bad{color:var(--warn)}
+meter{width:100%}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div>
+    <h1>Fly Chess — the actual brain</h1>
+    <div class="sub" id="info">loading the connectome…</div>
+  </div>
+  <div class="row" style="margin:0">
+    <button id="new">New game</button>
+    <a href="/" class="chip" style="text-decoration:none">← the small net</a>
+  </div>
+</header>
+
+<div class="grid">
+  <div>
+    <div class="card">
+      <div id="board"></div>
+      <div class="row">
+        <button id="go" class="primary">Let it move</button>
+        <button id="flip">Flip</button>
+      </div>
+      <div id="status">You are White. Click a piece to move.</div>
+    </div>
+    <div class="card">
+      <h2>What it fired</h2>
+      <div class="stats">
+        <div class="stat"><b id="s-spikes">–</b><span>spikes</span></div>
+        <div class="stat"><b id="s-rate">–</b><span>mean rate</span></div>
+        <div class="stat"><b id="s-step">–</b><span>timestep</span></div>
+        <div class="stat"><b id="s-time">–</b><span>seconds</span></div>
+      </div>
+      <div class="row"><input id="scrub" type="range" min="0" max="31" value="0" style="flex:1"></div>
+      <p class="note" id="stepnote">Each move runs the connectome for 32 timesteps of
+      leaky integrate-and-fire dynamics. Drag to step through them.</p>
+    </div>
+    <div class="card">
+      <h2>Move scores from the readout</h2>
+      <table><thead><tr><th>move</th><th class="num">score</th><th class="num">chance</th></tr></thead>
+      <tbody id="moves"><tr><td colspan="3">—</td></tr></tbody></table>
+      <p class="note">This network has no search at all. The 1,024 highest in-degree
+      neurons are read out as a score for every from/to square pair, illegal moves are
+      masked, and it plays from that — so these numbers are the whole decision.</p>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h2>The connectome, where it actually sits in the brain</h2>
+      <canvas id="brain"></canvas>
+      <div class="row">
+        <button class="chip" id="spin" aria-pressed="true">auto-rotate</button>
+        <button class="chip" id="edges" aria-pressed="true">synapses</button>
+        <button class="chip" id="colour" aria-pressed="false">colour by region</button>
+        <button class="chip" id="play" aria-pressed="true">animate spikes</button>
+        <button class="chip" id="reset">reset view</button>
+      </div>
+      <div class="row" id="legend" style="font-size:11.5px;color:var(--muted)"></div>
+      <p class="note" id="provenance">—</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+const GLYPH={p:'♟',n:'♞',b:'♝',r:'♜',q:'♛',k:'♚'}, FILES='abcdefgh';
+let state=null, selected=null, flipped=false, busy=false, anatomy=null, thought=null, step=0;
+const $=id=>document.getElementById(id);
+
+async function api(path,body){
+  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},
+                           body:JSON.stringify(body||{})});
+  const text=await r.text();
+  let data=null;
+  try{ data=JSON.parse(text); }catch(e){
+    throw new Error(`HTTP ${r.status} — ${text.replace(/<[^>]*>/g,' ').trim().slice(0,140)}`);
+  }
+  if(!r.ok||data.error) throw new Error(data.error||('HTTP '+r.status));
+  return data;
+}
+function boardFromFen(fen){const rows=fen.split(' ')[0].split('/'),map={};
+  rows.forEach((row,r)=>{let f=0;for(const ch of row){if(/\d/.test(ch)){f+=+ch;continue}
+    map[FILES[f]+(8-r)]=ch;f++}});return map}
+function renderBoard(){
+  const el=$('board'); el.innerHTML='';
+  const pieces=boardFromFen(state.fen);
+  const ranks=flipped?[1,2,3,4,5,6,7,8]:[8,7,6,5,4,3,2,1];
+  const files=flipped?[...FILES].reverse():[...FILES];
+  const last=state.lastMove?[state.lastMove.slice(0,2),state.lastMove.slice(2,4)]:[];
+  const targets=selected?(state.legal[selected]||[]):[];
+  for(const rank of ranks) for(const file of files){
+    const name=file+rank, d=document.createElement('div');
+    d.className='sq '+(((FILES.indexOf(file)+rank)%2===1)?'d':'l');
+    if(last.includes(name)) d.classList.add('last');
+    if(selected===name) d.classList.add('sel');
+    const piece=pieces[name];
+    if(piece){const g=document.createElement('span');
+      g.className='p '+(piece===piece.toUpperCase()?'w':'b');
+      g.textContent=GLYPH[piece.toLowerCase()]; d.appendChild(g);}
+    const hit=targets.find(t=>t.to===name);
+    if(hit){const dot=document.createElement('span');dot.className='dot';d.appendChild(dot)}
+    d.onclick=()=>click(name,hit);
+    el.appendChild(d);
+  }
+}
+async function click(name,hit){
+  if(busy||state.gameOver) return;
+  if(hit){ let uci=hit.uci;
+    const promos=(state.legal[selected]||[]).filter(t=>t.to===name&&t.promotion);
+    if(promos.length){ const pick=prompt('Promote to q, r, b or n','q');
+      if(pick===null) return;
+      const found=promos.find(t=>t.promotion===pick.trim().toLowerCase());
+      if(!found){ setStatus('Not a valid promotion.'); return } uci=found.uci; }
+    selected=null; await play(uci); return; }
+  selected=(selected===name||!state.legal[name])?(state.legal[name]?name:null):name;
+  renderBoard();
+}
+function setStatus(t,bad){ $('status').textContent=t; $('status').className=bad?'bad':''; }
+async function play(uci){
+  busy=true;
+  try{ state=await api('/api/move',{fen:state.fen,uci}); renderBoard();
+       if(!state.gameOver){ busy=false; await think(); return; } finish();
+  }catch(e){ setStatus('Error: '+e.message,true) }
+  busy=false;
+}
+function finish(){
+  if(!state.gameOver) return;
+  const how=(state.termination||'').toLowerCase().replace(/_/g,' ');
+  setStatus(state.result==='1/2-1/2'?`Draw — ${how}.`
+    :(state.result==='1-0'?'White wins':'Black wins')+` — ${how}.`);
+}
+async function think(){
+  if(busy||state.gameOver) return;
+  busy=true; $('go').disabled=true; setStatus('The connectome is firing…');
+  try{
+    const out=await api('/api/fly-think',{fen:state.fen});
+    thought=out.thought; state=out.position; decodeRaster();
+    $('s-spikes').textContent=thought.spikesTotal.toLocaleString();
+    $('s-rate').textContent=(thought.meanRate*100).toFixed(1)+'%';
+    $('s-time').textContent=thought.seconds.toFixed(2);
+    $('scrub').max=thought.timesteps-1; step=0; $('scrub').value=0; showStep();
+    $('moves').innerHTML=thought.top.map(m=>
+      `<tr><td>${m.san}</td><td class="num">${m.score.toFixed(2)}</td>`+
+      `<td class="num">${(m.probability*100).toFixed(1)}%</td></tr>`).join('');
+    renderBoard();
+    setStatus(state.gameOver?'':`Played ${thought.san} — ${thought.spikesTotal.toLocaleString()} spikes.`);
+    finish();
+  }catch(e){ setStatus('Error: '+e.message,true) }
+  busy=false; $('go').disabled=state.gameOver;
+}
+let raster=null;
+function decodeRaster(){
+  const bytes=Uint8Array.from(atob(thought.raster),c=>c.charCodeAt(0));
+  const perRow=Math.ceil(thought.neurons/8);
+  raster=[];
+  for(let t=0;t<thought.timesteps;t++){
+    const bits=new Uint8Array(thought.neurons);
+    for(let i=0;i<thought.neurons;i++)
+      bits[i]=(bytes[t*perRow+(i>>3)]>>(7-(i&7)))&1;
+    raster.push(bits);
+  }
+}
+function showStep(){
+  $('s-step').textContent=(step+1)+' / '+(thought?thought.timesteps:32);
+  if(thought) $('stepnote').textContent=
+    `Timestep ${step+1}: ${thought.perTimestep[step].toLocaleString()} of `+
+    `${thought.neurons.toLocaleString()} neurons firing.`;
+}
+$('scrub').oninput=e=>{ step=+e.target.value; showStep(); };
+
+/* ---------- the brain ---------- */
+const Brain=(()=>{
+  const canvas=$('brain'), ctx=canvas.getContext('2d');
+  let W=0,H=0,dpr=1,yaw=.6,pitch=-.15,zoom=1.5,spin=true,showEdges=true,byRegion=false,animate=true;
+  let pos=null,role=null,group=null,ePre=null,ePost=null,eSign=null,eW=null,groups=[];
+  let frame=0,last=0,t=0;
+  const PALETTE=['#6fbf8f','#e08a6c','#7aa7d6','#d6a77a','#b48ad6','#8ad6c7','#d6d07a','#d67a9e'];
+
+  function resize(){ const r=canvas.getBoundingClientRect();
+    dpr=Math.min(devicePixelRatio||1,2); W=Math.round(r.width); H=Math.round(r.height);
+    canvas.width=W*dpr; canvas.height=H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); }
+  function project(x,y,z){
+    const cy=Math.cos(yaw),sy=Math.sin(yaw);
+    let X=x*cy-z*sy, Z=x*sy+z*cy;
+    const cp=Math.cos(pitch),sp=Math.sin(pitch);
+    let Y=y*cp-Z*sp; Z=y*sp+Z*cp;
+    const f=2.6, d=f+Z; if(d<.25) return null;
+    const k=f/d*zoom*Math.min(W,H)*.42;
+    return {x:W/2+X*k, y:H/2-Y*k, z:Z, k:k/(Math.min(W,H)*.42)};
+  }
+  async function load(){
+    const meta=await fetch('/fly/anatomy.json').then(r=>r.json());
+    const buf=await fetch('/fly/anatomy.bin').then(r=>r.arrayBuffer());
+    const a=meta.arrays;
+    pos=new Float32Array(buf,a.positions.offset,a.positions.length);
+    role=new Uint8Array(buf,a.role.offset,a.role.length);
+    group=new Uint8Array(buf,a.group.offset,a.group.length);
+    ePre=new Uint16Array(buf,a.edgePre.offset,a.edgePre.length);
+    ePost=new Uint16Array(buf,a.edgePost.offset,a.edgePost.length);
+    eSign=new Int8Array(buf,a.edgeSign.offset,a.edgeSign.length);
+    eW=new Float32Array(buf,a.edgeWeight.offset,a.edgeWeight.length);
+    groups=meta.groups;
+    $('provenance').textContent=
+      `${meta.neurons.toLocaleString()} neurons at their measured FlyWire positions, `+
+      `${meta.synapsesDrawn.toLocaleString()} of ${meta.synapsesTotal.toLocaleString()} `+
+      `synapses drawn, across ${groups.length} neuropils. Source: ${meta.source}. `+
+      `Move prediction on held-out games: ${(meta.valTop1*100).toFixed(1)}% top-1, `+
+      `${(meta.valTop5*100).toFixed(1)}% top-5.`;
+    $('legend').innerHTML=
+      `<span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--spark);margin-right:4px"></i>firing now</span>`+
+      `<span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--accent);margin-right:4px"></i>sensory (sees the board)</span>`+
+      `<span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--warn);margin-right:4px"></i>motor (picks the move)</span>`;
+    resize(); requestAnimationFrame(draw);
+  }
+  function draw(now){
+    frame=requestAnimationFrame(draw);
+    if(!pos) return;
+    if(spin) yaw+=.0022;
+    if(animate && thought && now-last>70){ last=now;
+      step=(step+1)%thought.timesteps; $('scrub').value=step; showStep(); }
+    ctx.clearRect(0,0,W,H);
+    const n=role.length, sx=new Float32Array(n), sy=new Float32Array(n),
+          sk=new Float32Array(n), ok=new Uint8Array(n);
+    for(let i=0;i<n;i++){
+      const p=project(pos[i*3],pos[i*3+1],pos[i*3+2]);
+      if(p){ sx[i]=p.x; sy[i]=p.y; sk[i]=p.k; ok[i]=1; }
+    }
+    if(showEdges){
+      // Two batched paths instead of 12,000 strokes: excitatory and inhibitory.
+      for(const sign of [1,-1]){
+        ctx.beginPath();
+        for(let e=0;e<ePre.length;e++){
+          if(eSign[e]!==sign) continue;
+          const a=ePre[e], b=ePost[e];
+          if(!ok[a]||!ok[b]) continue;
+          ctx.moveTo(sx[a],sy[a]); ctx.lineTo(sx[b],sy[b]);
+        }
+        ctx.strokeStyle=sign>0?'#6fbf8f':'#e08a6c';
+        ctx.globalAlpha=.09; ctx.lineWidth=.55; ctx.stroke();
+      }
+      ctx.globalAlpha=1;
+    }
+    const live=raster&&thought?raster[step]:null;
+    for(let i=0;i<n;i++){
+      if(!ok[i]) continue;
+      const firing=live&&live[i];
+      if(firing) continue;                       // drawn on top, after the rest
+      ctx.fillStyle=byRegion?PALETTE[group[i]%PALETTE.length]
+        :(role[i]&2?'#e08a6c':role[i]&1?'#6fbf8f':'#6b6b7a');
+      ctx.globalAlpha=byRegion?.75:(role[i]?.8:.5);
+      const s=Math.max(1.1,2.1*sk[i]);
+      ctx.fillRect(sx[i]-s/2, sy[i]-s/2, s, s);
+    }
+    if(live){
+      ctx.globalAlpha=1; ctx.fillStyle='#ffd166';
+      for(let i=0;i<n;i++){
+        if(!ok[i]||!live[i]) continue;
+        const s=Math.max(1.6,3.2*sk[i]);
+        ctx.beginPath(); ctx.arc(sx[i],sy[i],s/2,0,6.2832); ctx.fill();
+      }
+    }
+    ctx.globalAlpha=1;
+  }
+  function chip(id,get,set){const el=$(id);
+    el.onclick=()=>{set(!get());el.setAttribute('aria-pressed',get()?'true':'false')}}
+  chip('spin',()=>spin,v=>spin=v); chip('edges',()=>showEdges,v=>showEdges=v);
+  chip('colour',()=>byRegion,v=>byRegion=v); chip('play',()=>animate,v=>animate=v);
+  $('reset').onclick=()=>{yaw=.6;pitch=-.15;zoom=1.5};
+  let drag=false,lx=0,ly=0;
+  canvas.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;
+    canvas.setPointerCapture(e.pointerId);spin=false;$('spin').setAttribute('aria-pressed','false')});
+  canvas.addEventListener('pointermove',e=>{if(!drag)return;
+    yaw+=(e.clientX-lx)*.008; pitch=Math.max(-1.4,Math.min(1.4,pitch+(e.clientY-ly)*.006));
+    lx=e.clientX;ly=e.clientY});
+  canvas.addEventListener('pointerup',()=>drag=false);
+  canvas.addEventListener('wheel',e=>{e.preventDefault();
+    zoom=Math.max(.4,Math.min(4,zoom*(e.deltaY>0?.92:1.08)))},{passive:false});
+  addEventListener('resize',resize);
+  return {load,resize};
+})();
+
+$('go').onclick=think;
+$('flip').onclick=()=>{flipped=!flipped;renderBoard()};
+$('new').onclick=async()=>{selected=null;state=await api('/api/position',{});renderBoard();
+  setStatus('Your move.')};
+
+(async()=>{
+  try{
+    const info=await api('/api/fly-info',{});
+    $('info').innerHTML=`${info.neurons.toLocaleString()} FlyWire neurons · `+
+      `${info.synapses.toLocaleString()} synapses · ${info.timesteps} timesteps · `+
+      `no search, the network picks the move directly`;
+    state=await api('/api/position',{});
+    renderBoard(); await Brain.load();
+  }catch(e){
+    $('info').textContent='The fly model is not loaded.';
+    setStatus('Start the server with:  bash run.sh site --fly ../fly-chess/runs/flychess_finisher_ep4.pt', true);
+  }
+})();
+</script>
+</body>
+</html>
