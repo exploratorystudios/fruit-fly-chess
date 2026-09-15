@@ -1,8 +1,8 @@
-"""Local web server: play the engine and watch what it is actually computing.
+"""Local web server for connectome-guided alpha-beta chess.
 
-Serves the page and a small JSON API backed by the real `fastchess` engine, so
-the visualisation always shows the network that is genuinely choosing the moves.
-Binds to localhost only.
+The default site uses the FlyWire policy to order root moves and the evaluator to
+score positions during search. It also serves the networks' real activity to the
+visualisation. Binds to localhost only.
 """
 import argparse
 import json
@@ -25,6 +25,7 @@ class Engine:
     def __init__(self, model_path, seconds=1.5, depth=8, max_seconds=8.):
         self.evaluator = Evaluator(model_path)
         self.search = Search(self.evaluator)
+        self.fly = None
         self.seconds, self.depth, self.max_seconds = seconds, depth, max_seconds
         # A manifest beside the weights gives the model a real name in the UI.
         manifest = Path(model_path).with_name('manifest.json') if model_path else None
@@ -83,10 +84,20 @@ class Engine:
         rows.sort(key=lambda row: row['static'], reverse=True)
         return rows
 
-    def think(self, board, seconds=None, depth=None):
+    def think(self, board, seconds=None, depth=None, guide=True):
         started = time.monotonic()
-        result = self.search.choose(board, seconds=seconds or self.seconds,
-                                    depth=depth or self.depth, nodes=None)
+        budget = seconds or self.seconds
+        fly_thought = None
+        root_policy = None
+        if guide and self.fly is not None and any(board.legal_moves):
+            fly_thought = self.fly.think(board, seed=0)
+            ranked = fly_thought.get('policy', fly_thought.get('top', []))
+            root_policy = {row['uci']: len(ranked) - index
+                           for index, row in enumerate(ranked)}
+        remaining = max(.01, budget - (time.monotonic() - started))
+        result = self.search.choose(board, seconds=remaining,
+                                    depth=depth or self.depth, nodes=None,
+                                    root_policy=root_policy)
         elapsed = time.monotonic() - started
         pv, probe = [], board.copy()
         # The root move comes from the search result; the rest of the line is
@@ -102,13 +113,16 @@ class Engine:
                 break
             pv.append({'uci': move.uci(), 'san': probe.san(move)})
             probe.push(move)
-        return {
+        thought = {
             'move': result.move.uci() if result.move else None,
             'san': board.san(result.move) if result.move else None,
             'score': result.score, 'depth': result.depth, 'nodes': result.nodes,
             'seconds': elapsed, 'nps': result.nodes / elapsed if elapsed else 0,
             'pv': pv, 'ttEntries': len(self.search.tt),
         }
+        if fly_thought is not None:
+            thought['fly'] = fly_thought
+        return thought
 
 
 def dispatch(engine, action, request):
@@ -134,7 +148,8 @@ def dispatch(engine, action, request):
             # Clamped: a serverless invocation has a hard wall-clock limit.
             seconds = request.get('seconds') or engine.seconds
             seconds = max(.05, min(float(seconds), engine.max_seconds))
-            thought = engine.think(board, seconds, request.get('depth'))
+            thought = engine.think(board, seconds, request.get('depth'),
+                                   guide=request.get('guide') is not False)
             if thought['move']:
                 board.push(chess.Move.from_uci(thought['move']))
             return 200, {'thought': thought, 'position': engine.position(board)}
@@ -218,8 +233,13 @@ class Handler(BaseHTTPRequestHandler):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--model', default=str(DEFAULT_MODEL))
-    p.add_argument('--fly', nargs='?', const=str(ROOT / 'model' / 'fly.npz'),
-                   help='Weights for the fly connectome; .npz needs no PyTorch')
+    default_fly = str(ROOT / 'model' / 'fly.npz')
+    fly_group = p.add_mutually_exclusive_group()
+    fly_group.add_argument('--fly', nargs='?', const=default_fly, default=default_fly,
+                           help='Connectome weights (default: model/fly.npz; .npz needs no PyTorch)')
+    fly_group.add_argument('--no-fly', dest='fly', action='store_const', const=None,
+                           default=argparse.SUPPRESS,
+                           help='Disable connectome guidance and use evaluator-only search')
     p.add_argument('--port', type=int, default=8000)
     p.add_argument('--host', default='127.0.0.1')
     p.add_argument('--seconds', type=float, default=1.5)
@@ -230,6 +250,8 @@ def main(argv=None):
     Handler.engine = Engine(a.model, a.seconds, a.depth)
     Handler.engine.fly = None
     if a.fly:
+        if not Path(a.fly).is_file():
+            p.error(f'No fly model at {a.fly}')
         print('loading the fly connectome…', flush=True)
         if a.fly.endswith('.npz'):
             from .fly_numpy import FlyNumpy

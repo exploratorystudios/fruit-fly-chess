@@ -104,6 +104,11 @@ class FlyNumpyTest(unittest.TestCase):
         thought = self.fly.think(chess.Board(), seed=1)
         self.assertEqual(self.fly.describe()['runtime'], 'numpy')
         self.assertGreater(thought['spikesTotal'], 0)
+        policy = thought['policy']
+        self.assertEqual({row['uci'] for row in policy},
+                         {move.uci() for move in chess.Board().legal_moves})
+        self.assertEqual([row['score'] for row in policy],
+                         sorted((row['score'] for row in policy), reverse=True))
 
     def test_raster_round_trips(self):
         import chess

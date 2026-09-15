@@ -50,6 +50,16 @@ class FeaturesTest(unittest.TestCase):
 
 
 class SearchTest(unittest.TestCase):
+    def test_connectome_policy_orders_root_moves(self):
+        board = chess.Board()
+        moves = list(board.legal_moves)
+        fly_choice = moves[-1]
+        policy = {move.uci(): 1 for move in moves}
+        policy[fly_choice.uci()] = len(moves)
+        search = Search(Evaluator())
+        ordered = search.ordered(board, moves, policy=policy)
+        self.assertEqual(ordered[0], fly_choice)
+
     def test_mate_and_restored_board(self):
         board = chess.Board('7k/5Q2/6K1/8/8/8/8/8 w - - 0 1')
         before = board.fen()
@@ -217,6 +227,26 @@ class ServerlessTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertLess(payload['thought']['seconds'], self.engine.max_seconds + 1)
 
+    def test_connectome_policy_is_passed_into_evaluator_search(self):
+        from fastchess.site_server import dispatch
+
+        class FlyPolicy:
+            def think(self, board, seed=None):
+                moves = list(board.legal_moves)
+                ranked = list(reversed(moves))
+                return {'policy': [{'uci': move.uci()} for move in ranked]}
+
+        self.engine.fly = FlyPolicy()
+        board = chess.Board()
+        status, payload = dispatch(self.engine, 'think',
+                                   {'seconds': .2, 'depth': 1, 'guide': True})
+        self.assertEqual(status, 200)
+        thought = payload['thought']
+        self.assertEqual(thought['fly']['policy'][0]['uci'],
+                         list(reversed(list(board.legal_moves)))[0].uci())
+        self.assertIn(chess.Move.from_uci(thought['move']), board.legal_moves)
+        self.assertIn('score', thought)
+
 
 class WsgiAppTest(unittest.TestCase):
     """The Vercel entrypoint. Vercel routes every request to this one callable,
@@ -242,6 +272,10 @@ class WsgiAppTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn('text/html', headers['Content-Type'])
         self.assertIn(b'Fly Chess', body)
+        self.assertIn(b'id="flyOverlay"', body)
+        self.assertIn(b'<option value="hybrid" selected>fly-guided search', body)
+        self.assertIn(b"$('engine').value='hybrid'", body)
+        self.assertNotIn(b'board3d.bundle.js', body)
 
     def test_api_actions_round_trip(self):
         import json as jsonlib
@@ -307,7 +341,7 @@ class PieceRenderingTest(unittest.TestCase):
 
     def test_monochrome_fonts_come_before_the_default_stack(self):
         import re
-        rule = re.search(r'\.sq \.p\{[^}]*\}', self.page, re.S)
+        rule = re.search(r'\.sq \.p text\{[^}]*\}', self.page, re.S)
         self.assertIsNotNone(rule, 'piece font rule not found')
         family = rule.group(0)
         self.assertIn('font-family:', family)

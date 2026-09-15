@@ -84,6 +84,9 @@ class FlyEngine:
                      'score': float(scores[encode_move(board, m)]),
                      'probability': float(probabilities[encode_move(board, m)])}
                     for m in ranked[:8]],
+            'policy': [{'uci': m.uci(),
+                        'score': float(scores[encode_move(board, m)])}
+                       for m in ranked],
         }
 
     def describe(self):

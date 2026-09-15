@@ -1,8 +1,9 @@
 # Fast Chess
 
-A small chess evaluation network you can train on this laptop, with its own
-CPU chess search. The original `fly-chess` is untouched. This version replaces
-the fly connectome with an ordinary feed-forward network.
+A small Stockfish-trained chess evaluator and CPU search, paired with the
+FlyWire connectome policy from the original `fly-chess` project. The command-line
+engine uses the evaluator alone; the web site defaults to connectome-guided search,
+where the fly ranks root moves and the evaluator scores positions.
 
 The network has **104,257 trainable parameters**: 781 inputs → 128 → 32 → 1.
 It learns a correction to material evaluation from Stockfish-labeled positions.
@@ -173,31 +174,39 @@ red for negative — drawn only where both ends are active, strongest 900 of 4,0
 Drag to rotate, scroll to zoom, and toggle auto-rotate, connections or inputs. The
 panel remembers whether it was open.
 
-It is drawn with a hand-rolled projection on a 2D canvas rather than a 3D library,
-so the page still needs no build step, no CDN and no network at all.
+The analysis panel uses a hand-rolled projection. The chessboard stays flat and
+easy to play, with an SVG fly carrying the selected engine's pieces across it.
 
 The page talks to the real `fastchess` engine over a small JSON API, so the picture
 can never drift from the network that is actually choosing moves — `Evaluator.inspect`
 returns the intermediate values and a test asserts it agrees with `Evaluator.__call__`.
-Stdlib only, no build step and no internet; it binds to localhost.
+The Python engine binds to localhost and uses only its local runtime dependencies.
 
 
-## The actual fly brain
+## The fly brain guides search
 
-There are two networks in this repo and they are not the same thing. The one that
-plays well is the 104,257-parameter evaluator above. The other is the reason the
-project is called what it is: a spiking model built on a **6,000-neuron subgraph of
-the FlyWire connectome**, the complete adult *Drosophila* brain. It has no search at
-all — 773 board features drive 1,024 sensory neurons, the connectome runs for 32
-timesteps of leaky integrate-and-fire dynamics, and the 1,024 highest in-degree
-neurons are read out as a score for every from/to square pair.
+The site combines two different networks. The **6,000-neuron FlyWire connectome**
+reads a position and ranks legal moves. The 104,257-parameter evaluator above
+scores positions for alpha-beta search. By default, the connectome's root ranking
+orders the search, and the evaluator scores the positions search examines; search
+can choose a different move after looking ahead. The fly model itself is a policy,
+not a scalar position evaluator: 773 board features drive 1,024 sensory neurons,
+the connectome runs for 32 timesteps of leaky integrate-and-fire dynamics, and the
+1,024 highest in-degree neurons are read out as scores for from/to square pairs.
 
 ```bash
-bash run.sh site --fly            # then open http://127.0.0.1:8000/
+bash run.sh site                  # connectome-guided search; open http://127.0.0.1:8000/
+# Optional comparisons: --no-fly for evaluator-only search; the page also offers
+# the connectome's standalone move policy in its "played by" selector.
 ```
 
-The **fly brain** panel on the main page draws that model **where it actually is**,
-and a *played by* selector lets the connectome take over the game from the evaluator.
+The 2D chessboard uses the original square grid and clear piece glyphs. A visible
+SVG fly waits beside it, then flies to, picks up, and carries the piece chosen by
+either the fly-guided search or the connectome's standalone policy. The
+**fly brain** panel shows the exact activity that supplied the root move ranking
+for hybrid search, or the activity behind the move in policy-only mode. The
+evaluator-only search remains available for comparison, and `--no-fly` starts the
+site without connectome weights.
 
 It runs in NumPy, not PyTorch. The dynamics are only sparse accumulation and
 elementwise arithmetic — one weighted `bincount` per timestep stands in for the
@@ -214,18 +223,17 @@ and the neurons that light up are the ones that genuinely fired: the full
 the network's own activity, not a re-simulation or a summary.
 
 Colour by role (sensory, motor, interneuron) or by neuropil, and scrub the 32
-timesteps by hand. When the connectome is playing, the panel shows the activity that
-produced its move; when the evaluator is playing, it shows the connectome looking at
-the same position and says what it would have played instead — it never implies the
-brain on screen chose a move it did not.
+timesteps by hand. In hybrid mode, the panel reports the fly's top-ranked move and
+the move alpha-beta selected after evaluating the searched positions, so it stays
+clear about how each network affected the decision.
 
 If the weights are missing the panel still loads, since the anatomy is a static
 188 KiB asset — but normally they ship with it, so the deployed site fires the real
 neurons too.
 
 Be clear-eyed about its chess: it predicts the played move in 30.3% of held-out
-positions, 57.9% in its top five. It is far weaker than the small evaluator, and it
-is meant to be interesting rather than strong.
+positions, 57.9% in its top five. It is much weaker than the small evaluator on its
+own; the hybrid lets search verify and look beyond its move preferences.
 
 The weights ship in `model/fly.npz` (20.9 MiB, NumPy only) and the anatomy in
 `public/fly/` (188 KiB for 6,000 neurons and the 12,000 strongest of 697,316

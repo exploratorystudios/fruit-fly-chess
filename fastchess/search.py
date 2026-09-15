@@ -16,6 +16,9 @@ EXACT, LOWER, UPPER = 0, 1, 2
 TT_LIMIT = 400000
 # Ordering bands, wide enough that history scores can never reach the band above.
 TT_BONUS, CAPTURE_BONUS, KILLER_BONUS = 1 << 30, 1 << 20, 1 << 19
+# A connectome prior guides root ordering while the evaluator still scores the
+# positions reached by search. Keep this below the transposition-table band.
+POLICY_BONUS = 1 << 22
 # Pruning margins in centipawns per ply of remaining depth.
 REVERSE_FUTILITY_DEPTH, REVERSE_FUTILITY_MARGIN = 6, 120
 FUTILITY_DEPTH, FUTILITY_MARGIN = 2, 150
@@ -80,7 +83,7 @@ class Search:
         return (board.is_insufficient_material() or board.halfmove_clock >= 100
                 or board.is_repetition(3))
 
-    def ordered(self, board, moves, tt_move=None, ply=0):
+    def ordered(self, board, moves, tt_move=None, ply=0, policy=None):
         killer_a, killer_b = self.killers[ply] if ply < len(self.killers) else (None, None)
         history, turn = self.history, board.turn
         scored = []
@@ -107,6 +110,8 @@ class Search:
                 score = history.get((turn, move.from_square, move.to_square), 0)
             if move.promotion:
                 score += VALUES[move.promotion - 1]
+            if policy is not None:
+                score += POLICY_BONUS * policy.get(move.uci(), 0)
             scored.append((score, move))
         scored.sort(key=lambda pair: pair[0], reverse=True)
         return [move for _, move in scored]
@@ -307,9 +312,10 @@ class Search:
         self.tt[key] = (depth, score, flag, best_move)
         return best
 
-    def root(self, board, depth, alpha, beta, preferred):
+    def root(self, board, depth, alpha, beta, preferred, policy=None):
         best, best_move = -INF, None
-        for index, move in enumerate(self.ordered(board, list(board.legal_moves), preferred, 0)):
+        for index, move in enumerate(self.ordered(
+                board, list(board.legal_moves), preferred, 0, policy)):
             self.tick()
             self.push(board, move)
             try:
@@ -329,7 +335,7 @@ class Search:
                 break
         return best, best_move
 
-    def choose(self, board, seconds=1., depth=6, nodes=1000000):
+    def choose(self, board, seconds=1., depth=6, nodes=1000000, root_policy=None):
         if (seconds is not None and seconds <= 0) or depth < 1 or (nodes is not None and nodes < 1):
             raise ValueError('seconds, depth and nodes must be positive')
         start = time.monotonic()
@@ -348,18 +354,24 @@ class Search:
         for current in range(1, depth + 1):
             try:
                 if current <= 2 or abs(best_score) >= MATE_BOUND:
-                    score, move = self.root(board, current, -INF, INF, best_move)
+                    score, move = self.root(board, current, -INF, INF,
+                                            best_move if completed else None,
+                                            root_policy)
                 else:
                     # Aspiration window: re-search wider only when it fails.
                     window = 50
                     while True:
                         low, high = best_score - window, best_score + window
-                        score, move = self.root(board, current, low, high, best_move)
+                        score, move = self.root(board, current, low, high,
+                                                best_move if completed else None,
+                                                root_policy)
                         if low < score < high:
                             break
                         window *= 4
                         if window > 2000:
-                            score, move = self.root(board, current, -INF, INF, best_move)
+                            score, move = self.root(board, current, -INF, INF,
+                                                    best_move if completed else None,
+                                                    root_policy)
                             break
                 if move is not None:
                     best_move, best_score, completed = move, score, current

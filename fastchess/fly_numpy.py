@@ -107,6 +107,11 @@ class FlyNumpy:
                      'score': float(scores[encode_move(board, m)]),
                      'probability': float(probabilities[encode_move(board, m)])}
                     for m in ranked[:8]],
+            # Full legal-move ranking lets alpha-beta use the connectome as a
+            # root prior without rerunning the costly recurrent simulation.
+            'policy': [{'uci': m.uci(),
+                        'score': float(scores[encode_move(board, m)])}
+                       for m in ranked],
         }
 
     def describe(self):

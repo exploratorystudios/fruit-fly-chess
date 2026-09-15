@@ -27,11 +27,11 @@ header{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;justify-content
 @media (max-width:1040px){.grid{grid-template-columns:1fr}}
 @media (min-width:1041px){.wrap{max-width:1460px}}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px}
-/* board */
+.board-stage{width:min(100%,720px);aspect-ratio:1;max-width:720px;margin:0 auto;position:relative}
 #board{width:100%;aspect-ratio:1;max-width:100%;display:grid;
   grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);
   border:1px solid var(--line);border-radius:8px;overflow:hidden;
-  container-type:inline-size;max-width:720px;margin:0 auto}
+  container-type:inline-size;margin:0 auto}
 .sq{position:relative;display:flex;align-items:center;justify-content:center;
   font-size:min(9vw,44px);line-height:1;cursor:pointer;user-select:none}
 /* Container units: the pieces scale with the board, not the viewport. */
@@ -40,11 +40,13 @@ header{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;justify-content
    own fixed colours and ignores `color` entirely — that renders both sides the
    same dark glyph. Ask for text presentation and put monochrome symbol fonts
    first so the CSS colour is actually used. */
-.sq .p{line-height:1;pointer-events:none;font-variant-emoji:text;
+.sq .p{display:block;width:90%;height:90%;pointer-events:none;overflow:visible}
+.sq .p text{font-size:82px;text-anchor:middle;paint-order:stroke fill;stroke-width:2px;
+  font-variant-emoji:text;
   font-family:"DejaVu Sans","FreeSerif","Noto Sans Symbols 2","Segoe UI Symbol",
               "Arial Unicode MS","Apple Symbols",sans-serif}
-.sq .p.w{color:#fffdf8;-webkit-text-stroke:1.6px #3a3128;text-shadow:0 1px 2px rgba(0,0,0,.4)}
-.sq .p.b{color:#1c1815;-webkit-text-stroke:1.6px #efe9dc;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.sq .p.w text{fill:#fffdf8;stroke:#3a3128;filter:drop-shadow(0 1px 1px rgba(0,0,0,.4))}
+.sq .p.b text{fill:#1c1815;stroke:#efe9dc;filter:drop-shadow(0 1px 1px rgba(0,0,0,.4))}
 .sq.l{background:var(--light)} .sq.d{background:var(--dark)}
 .sq.sel{outline:3px solid var(--accent);outline-offset:-3px}
 .sq.last{box-shadow:inset 0 0 0 3px color-mix(in srgb,var(--accent) 45%,transparent)}
@@ -53,7 +55,25 @@ header{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;justify-content
   background:color-mix(in srgb,var(--accent) 55%,transparent);pointer-events:none}
 .sq.cap .dot{width:82%;height:82%;background:none;
   border:3px solid color-mix(in srgb,var(--warn) 65%,transparent)}
+.sq.arriving .p{visibility:hidden}
 .controls{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.board-help{margin:10px 0 0;color:var(--muted);font-size:11.5px}
+.board-footer{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.fly-perch{display:flex;align-items:center;gap:4px;color:var(--muted);font-size:11px;white-space:nowrap}
+.fly-perch svg{display:block;width:82px;height:56px;overflow:visible;transition:opacity .18s}
+.fly-perch.taking-off svg{opacity:0}
+.fly-overlay{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;
+  pointer-events:none;visibility:hidden}
+.fly-overlay.active{visibility:visible}
+.fly-overlay .wing{transform-box:fill-box;transform-origin:75% 85%;animation:wing-beat .12s ease-in-out infinite alternate}
+.fly-overlay .wing.right{animation-delay:-.06s}
+@keyframes wing-beat{from{transform:rotate(-18deg)}to{transform:rotate(22deg)}}
+.fly-piece{font-family:"DejaVu Sans","FreeSerif","Noto Sans Symbols 2","Segoe UI Symbol",sans-serif;
+  font-size:86px;text-anchor:middle;dominant-baseline:central;paint-order:stroke fill;stroke-width:3px}
+.fly-piece.w{fill:#fffdf8;stroke:#3a3128}
+.fly-piece.b{fill:#1c1815;stroke:#efe9dc}
+.fly-piece.settled{font-size:86px}
+.svg-defs{position:absolute;width:0;height:0;overflow:hidden}
 button{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--line);
   background:var(--panel);color:var(--ink);cursor:pointer}
 button:hover:not(:disabled){border-color:var(--accent)}
@@ -128,7 +148,10 @@ body.drawer-open .wrap{padding-right:min(436px,94vw)}
   </div>
   <div style="display:flex;gap:8px;align-items:center">
     <label class="sub">played by
-      <select id="engine"><option value="net" selected>evaluator</option></select>
+      <select id="engine">
+        <option value="hybrid" selected>fly-guided search</option>
+        <option value="net">evaluator-only search</option>
+      </select>
     </label>
     <label class="sub">think
       <select id="secs">
@@ -146,11 +169,43 @@ body.drawer-open .wrap{padding-right:min(436px,94vw)}
 <div class="grid">
   <div>
     <div class="card">
-      <div id="board"></div>
-      <div class="controls">
-        <button id="go" class="primary">Let it move</button>
-        <button id="flip">Flip board</button>
+      <svg class="svg-defs" aria-hidden="true" focusable="false">
+        <symbol id="flyCharacter" viewBox="0 0 180 120">
+          <g class="wing left"><ellipse cx="69" cy="31" rx="18" ry="38" fill="#d9f0ec" fill-opacity=".86" stroke="#8db9b0" stroke-width="2" transform="rotate(-24 69 31)"/></g>
+          <g class="wing right"><ellipse cx="110" cy="29" rx="17" ry="36" fill="#e5f2ed" fill-opacity=".82" stroke="#9bbdb3" stroke-width="2" transform="rotate(22 110 29)"/></g>
+          <g fill="none" stroke="#29372f" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M72 65 47 78 35 103M84 70 72 88 67 111M98 70 102 90 96 111M111 65 132 77 143 101M105 68 120 87 123 108M88 71 84 93 87 113" stroke-width="4"/>
+            <path d="M132 47Q145 31 153 24M138 52Q157 45 164 38" stroke="#987544" stroke-width="2.5"/>
+          </g>
+          <ellipse cx="78" cy="66" rx="31" ry="22" fill="#475b4e" stroke="#25352c" stroke-width="3"/>
+          <ellipse cx="55" cy="67" rx="25" ry="17" fill="#a77a40" stroke="#674c2b" stroke-width="3"/>
+          <path d="M48 55v24M59 51v32M70 49v34" stroke="#e2bd73" stroke-width="3" opacity=".8"/>
+          <ellipse cx="130" cy="53" rx="18" ry="17" fill="#394c40" stroke="#25352c" stroke-width="3"/>
+          <ellipse cx="141" cy="47" rx="7" ry="9" fill="#bd4c48" stroke="#492623" stroke-width="2"/>
+          <ellipse cx="145" cy="45" rx="2" ry="3" fill="#fff3d4"/>
+          <circle cx="123" cy="43" r="6" fill="#b94742" stroke="#492623" stroke-width="2"/>
+          <path d="M115 65q10 9 20 1" fill="none" stroke="#d8b86c" stroke-width="2"/>
+        </symbol>
+      </svg>
+      <div class="board-stage" id="boardStage">
+        <div id="board" role="grid" aria-label="Chess board"></div>
+        <svg class="fly-overlay" id="flyOverlay" viewBox="0 0 800 800" aria-hidden="true">
+          <g id="settledPieces"></g>
+          <g id="flyInFlight"><use href="#flyCharacter" width="180" height="120"/></g>
+          <text id="carriedPiece" class="fly-piece" x="0" y="0"></text>
+        </svg>
       </div>
+      <div class="board-footer">
+        <div class="controls">
+          <button id="go" class="primary">Let it move</button>
+          <button id="flip">Flip board</button>
+        </div>
+        <div class="fly-perch" id="flyPerch" aria-label="The fly is ready to move a piece">
+          <svg viewBox="0 0 180 120" aria-hidden="true"><use href="#flyCharacter"/></svg>
+          <span>fly ready</span>
+        </div>
+      </div>
+      <p class="board-help" id="flyHint">The connectome ranks moves; the evaluator scores positions.</p>
       <div id="status">You are White. Click a piece to move.</div>
     </div>
     <div class="card">
@@ -162,8 +217,8 @@ body.drawer-open .wrap{padding-right:min(436px,94vw)}
         <div class="stat"><b id="s-score">0</b><span>final (cp)</span></div>
       </div>
       <p class="note">The network never outputs a move. It outputs one number: how good this
-      position is for the side to move. <b>Final = material + 100 × correction.</b> The search
-      is what actually chooses.</p>
+      position is for the side to move. <b>Final = material + 100 × correction.</b> In the
+      default mode, the fly ranks moves to guide search and this evaluator scores positions.</p>
     </div>
   </div>
 
@@ -288,13 +343,23 @@ function renderBoard(){
     // a1 is a dark square and h1 light, so the sum is odd on dark squares.
     const dark=(FILES.indexOf(file)+rank)%2===1;
     d.className='sq '+(dark?'d':'l');
+    d.dataset.square=name;
+    d.setAttribute('role','gridcell');
+    d.setAttribute('aria-label',pieceLabel(pieces[name],name));
+    if(window.BoardFly?.isArriving(name)) d.classList.add('arriving');
     if(last.includes(name)) d.classList.add('last');
     if(selected===name) d.classList.add('sel');
     const piece=pieces[name];
     if(piece){
-      const g=document.createElement('span');
-      g.className='p '+(piece===piece.toUpperCase()?'w':'b');
-      g.textContent=GLYPH[piece.toLowerCase()]+'\uFE0E';   // text, not emoji
+      const ns='http://www.w3.org/2000/svg';
+      const g=document.createElementNS(ns,'svg');
+      g.setAttribute('class','p '+(piece===piece.toUpperCase()?'w':'b'));
+      g.setAttribute('viewBox','0 0 100 100');
+      g.setAttribute('aria-hidden','true');
+      const glyph=document.createElementNS(ns,'text');
+      glyph.setAttribute('x','50');glyph.setAttribute('y','82');
+      glyph.textContent=GLYPH[piece.toLowerCase()]+'\uFE0E';
+      g.appendChild(glyph);
       d.appendChild(g);
     }
     const hit=targets.find(t=>t.to===name);
@@ -308,6 +373,90 @@ function renderBoard(){
     el.appendChild(d);
   }
 }
+function pieceLabel(piece,square){
+  const name=square[0]+square[1];
+  return piece?`${piece===piece.toUpperCase()?'White':'Black'} ${piece.toLowerCase()} on ${name}`:`${name}, empty`;
+}
+const BoardFly=(()=>{
+  const overlay=$('flyOverlay'),fly=$('flyInFlight'),carried=$('carriedPiece');
+  const settled=$('settledPieces'),perch=$('flyPerch'),home={x:744,y:744};
+  let prepared=null;
+  function point(square){
+    const col=flipped?7-FILES.indexOf(square[0]):FILES.indexOf(square[0]);
+    const row=flipped?Number(square[1])-1:8-Number(square[1]);
+    return {x:(col+.5)*100,y:(row+.5)*100};
+  }
+  function addLeg(legs,from,to,code,positions){
+    if(!code) return;
+    legs.push({from,to,code});
+    if(code.toLowerCase()==='k'&&from[1]===to[1]&&Math.abs(FILES.indexOf(from[0])-FILES.indexOf(to[0]))===2){
+      const rank=from[1],rookFrom=(to[0]>'e'?'h':'a')+rank,rookTo=(to[0]>'e'?'f':'d')+rank;
+      if(positions[rookFrom]) legs.push({from:rookFrom,to:rookTo,code:positions[rookFrom]});
+    }
+  }
+  function prepareMove(uci){
+    prepared=null;
+    if(!uci||uci.length<4||!state)return;
+    const positions=boardFromFen(state.fen),from=uci.slice(0,2),to=uci.slice(2,4),legs=[];
+    addLeg(legs,from,to,positions[from],positions);
+    if(legs.length) prepared={legs};
+  }
+  function isArriving(square){return !!prepared?.legs.some(leg=>leg.to===square);}
+  function setFly(x,y,angle){
+    fly.setAttribute('transform',`translate(${x} ${y}) rotate(${angle}) scale(.52) translate(-90 -60)`);
+  }
+  function putPiece(node,code,at){
+    node.setAttribute('x',at.x);node.setAttribute('y',at.y);
+    node.setAttribute('class',`fly-piece ${code===code.toUpperCase()?'w':'b'} settled`);
+    node.textContent=GLYPH[code.toLowerCase()]+'\uFE0E';
+  }
+  function animateLeg(leg){
+    const from=point(leg.from),to=point(leg.to),mid={x:(from.x+to.x)/2,y:(from.y+to.y)/2};
+    const hoverFrom={x:from.x,y:Math.max(58,from.y-35)},hoverTo={x:to.x,y:Math.max(58,to.y-35)};
+    const path=[[0,home],[.17,{x:from.x,y:Math.max(66,from.y-68)}],[.25,hoverFrom],[.31,hoverFrom],
+      [.38,{x:from.x,y:Math.max(66,from.y-67)}],[.61,{x:mid.x,y:Math.max(66,mid.y-118)}],
+      [.81,{x:to.x,y:Math.max(66,to.y-67)}],[.87,hoverTo],[.92,hoverTo],[1,home]];
+    const duration=1450,start=performance.now();
+    return new Promise(resolve=>{
+      const frame=now=>{
+        const t=Math.min(1,(now-start)/duration);let i=0;
+        while(i<path.length-2&&t>path[i+1][0])i++;
+        const [ta,a]=path[i],[tb,b]=path[i+1],u=(t-ta)/(tb-ta),ease=u*u*(3-2*u);
+        const x=a.x+(b.x-a.x)*ease,y=a.y+(b.y-a.y)*ease;
+        const angle=Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI;
+        setFly(x,y,angle);
+        const holding=t>=.31&&t<.91;
+        carried.style.visibility=holding?'visible':'hidden';
+        if(holding){
+          const carryProgress=Math.max(0,Math.min(1,(t-.31)/.6));
+          const offset=(from.y-hoverFrom.y)*(1-carryProgress)+(to.y-hoverTo.y)*carryProgress;
+          carried.setAttribute('x',x);carried.setAttribute('y',y+offset);
+          carried.setAttribute('class',`fly-piece ${leg.code===leg.code.toUpperCase()?'w':'b'}`);
+          carried.textContent=GLYPH[leg.code.toLowerCase()]+'\uFE0E';
+        }
+        if(t<1)requestAnimationFrame(frame);
+        else{
+          const piece=document.createElementNS('http://www.w3.org/2000/svg','text');
+          putPiece(piece,leg.code,to);settled.appendChild(piece);resolve();
+        }
+      };
+      requestAnimationFrame(frame);
+    });
+  }
+  async function animatePreparedMove(){
+    if(!prepared)return;
+    const move=prepared;
+    if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){
+      prepared=null;renderBoard();return;
+    }
+    overlay.classList.add('active');perch.classList.add('taking-off');
+    for(const leg of move.legs) await animateLeg(leg);
+    prepared=null;carried.style.visibility='hidden';settled.replaceChildren();
+    overlay.classList.remove('active');perch.classList.remove('taking-off');renderBoard();
+  }
+  return {prepareMove,animatePreparedMove,isArriving};
+})();
+window.BoardFly=BoardFly;
 async function clickSquare(name,hit){
   if(busy||state.gameOver) return;
   if(hit){
@@ -325,6 +474,11 @@ async function clickSquare(name,hit){
   selected=(selected===name||!state.legal[name])?(state.legal[name]?name:null):name;
   renderBoard();
 }
+window.flyChessSquareClick=name=>{
+  if(!state)return;
+  const hit=selected?(state.legal[selected]||[]).find(t=>t.to===name):null;
+  clickSquare(name,hit||null);
+};
 function setStatus(text,cls){ const s=$('status'); s.textContent=text; s.className=cls||''; }
 function fmt(cp){ return (cp>=0?'+':'')+(cp/100).toFixed(2); }
 
@@ -418,29 +572,45 @@ async function applyMove(uci){
 async function think(){
   if(busy||state.gameOver) return;
   busy=true; $('go').disabled=true;
+  $('undo').disabled=true; $('new').disabled=true; $('engine').disabled=true;
+  $('flip').disabled=true;
   setStatus('Thinking…','thinking');
   const previous=state.fen;
+  let flight=Promise.resolve();
   try{
     if($('engine').value==='fly'){
       const {thought,position}=await api('/api/fly-think',{fen:previous});
+      BoardFly.prepareMove(thought.move);
       history.push(previous);
       state=position; setFly({...thought, fen:previous}, true);
-      await refresh();
+      const refreshed=refresh();
+      flight=BoardFly.animatePreparedMove();
+      await refreshed;
       const done=describeEnd();
       setStatus(done||`The connectome played ${thought.san} — `+
         `${thought.spikesTotal.toLocaleString()} spikes across ${thought.timesteps} timesteps.`);
     } else {
       const seconds=parseFloat($('secs').value);
-      const {thought,position}=await api('/api/think',{fen:previous,seconds});
+      const guide=$('engine').value==='hybrid';
+      const {thought,position}=await api('/api/think',{fen:previous,seconds,guide});
+      BoardFly.prepareMove(thought.move);
       history.push(previous);
       state=position; paintThought(thought);
-      await refresh();
+      if(guide&&thought.fly){
+        setFly({...thought.fly,fen:previous,guided:true,searchSan:thought.san},false);
+      }
+      const refreshed=refresh();
+      flight=BoardFly.animatePreparedMove();
+      await refreshed;
       const done=describeEnd();
-      setStatus(done||`Played ${thought.san} — depth ${thought.depth}, `+
+      setStatus(done||(guide?`Fly-guided search played ${thought.san}`:`Played ${thought.san}`)+
+        ` — depth ${thought.depth}, `+
         `${thought.nodes.toLocaleString()} positions searched. Your move.`);
     }
   }catch(err){ setStatus('Error: '+err.message); }
-  busy=false; $('go').disabled=state.gameOver;
+  await flight;
+  busy=false; $('go').disabled=state.gameOver; $('undo').disabled=history.length===0;
+  $('new').disabled=false; $('engine').disabled=false; $('flip').disabled=false;
 }
 $('go').onclick=think;
 $('flip').onclick=()=>{flipped=!flipped;renderBoard();};
@@ -544,8 +714,10 @@ const Viz = (() => {
     if(!flyThought){
       $('flystats').textContent='';
       $('flynote').textContent=flyAvailable
-        ? 'Waiting for the connectome to look at this position…'
-        : 'Structure only. Start the server with --fly to see it fire.';
+        ? ($('engine').value==='hybrid'
+          ? 'The connectome will guide the next search.'
+          : 'Waiting for the connectome to look at this position…')
+        : 'Connectome weights are unavailable; evaluator-only search is active.';
       return;
     }
     const chose=flyThought.chose;
@@ -553,10 +725,13 @@ const Viz = (() => {
       `${flyThought.spikesTotal.toLocaleString()} spikes · `+
       `step ${flyStep+1}/${flyThought.timesteps} · `+
       `${flyThought.perTimestep[flyStep].toLocaleString()} firing`;
-    $('flynote').textContent=chose
+    $('flynote').textContent=flyThought.guided
+      ? `The connectome ranked root moves for alpha-beta search. The evaluator scored positions; `+
+        `search played ${flyThought.searchSan} (fly's top choice: ${flyThought.top?.[0]?.san||flyThought.san}).`
+      : chose
       ? `It played ${flyThought.san}. No search at all: the readout scores every from/to `+
         `square pair and it plays straight from that.`
-      : `The evaluator is playing this game. Shown here is the connectome looking at the `+
+      : `Evaluator-only search is playing this game. Shown here is the connectome looking at the `+
         `same position — its own choice would be ${flyThought.san}.`;
   }
   $('scrub').oninput=e=>{ flyStep=+e.target.value; note(); };
@@ -616,6 +791,8 @@ let observing=null;
 async function observe(){
   // Costs a full 32-timestep simulation, so only while the panel is open.
   if(!flyAvailable || !Viz.isOpen || !state || state.gameOver) return;
+  // In hybrid mode, only show simulations that actually guided a search.
+  if($('engine').value==='hybrid') return;
   // When the connectome is the one playing, keep showing the activity that
   // actually produced its move rather than overwriting it with a fresh look at
   // the position it just created.
@@ -643,12 +820,16 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&Viz.isOpen) Viz.cl
     try{
       const fly=await api('/api/fly-info',{});
       flyAvailable=true;
+      $('flyHint').hidden=false;
       const option=document.createElement('option');
-      option.value='fly'; option.textContent='fly brain (no search)';
+      option.value='fly'; option.textContent='fly brain (policy only)';
       $('engine').appendChild(option);
+      $('engine').value='hybrid';
+      $('secs').disabled=false;
+      $('flyHint').textContent='The connectome ranks root moves; alpha-beta search checks them using the position evaluator.';
       $('modelinfo').textContent+=
-        ` · fly connectome available: ${fly.neurons.toLocaleString()} neurons, ${fly.timesteps} timesteps`;
-    }catch(e){ flyAvailable=false; }
+        ` · fly connectome guides root move ordering (${fly.neurons.toLocaleString()} neurons, ${fly.timesteps} timesteps)`;
+    }catch(e){ flyAvailable=false; $('engine').value='net'; $('flyHint').textContent='Connectome weights unavailable; evaluator-only search is active.'; }
     $('engine').onchange=()=>{ $('secs').disabled=$('engine').value==='fly'; };
     state=await api('/api/position',{});
     await refresh();
