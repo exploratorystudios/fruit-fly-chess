@@ -36,7 +36,13 @@ header{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;justify-content
   font-size:min(9vw,44px);line-height:1;cursor:pointer;user-select:none}
 /* Container units: the pieces scale with the board, not the viewport. */
 @supports (font-size:1cqw){ .sq{font-size:9.2cqw} }
-.sq .p{line-height:1;pointer-events:none}
+/* The chess code points can resolve to a colour-emoji font, which supplies its
+   own fixed colours and ignores `color` entirely — that renders both sides the
+   same dark glyph. Ask for text presentation and put monochrome symbol fonts
+   first so the CSS colour is actually used. */
+.sq .p{line-height:1;pointer-events:none;font-variant-emoji:text;
+  font-family:"DejaVu Sans","FreeSerif","Noto Sans Symbols 2","Segoe UI Symbol",
+              "Arial Unicode MS","Apple Symbols",sans-serif}
 .sq .p.w{color:#fffdf8;-webkit-text-stroke:1.6px #3a3128;text-shadow:0 1px 2px rgba(0,0,0,.4)}
 .sq .p.b{color:#1c1815;-webkit-text-stroke:1.6px #efe9dc;text-shadow:0 1px 2px rgba(0,0,0,.4)}
 .sq.l{background:var(--light)} .sq.d{background:var(--dark)}
@@ -288,7 +294,7 @@ function renderBoard(){
     if(piece){
       const g=document.createElement('span');
       g.className='p '+(piece===piece.toUpperCase()?'w':'b');
-      g.textContent=GLYPH[piece.toLowerCase()];
+      g.textContent=GLYPH[piece.toLowerCase()]+'\uFE0E';   // text, not emoji
       d.appendChild(g);
     }
     const hit=targets.find(t=>t.to===name);

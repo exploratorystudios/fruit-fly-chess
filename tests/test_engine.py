@@ -288,3 +288,29 @@ class BoardColouringTest(unittest.TestCase):
             with self.subTest(square=square):
                 self.assertEqual(is_dark(square), expected_dark,
                                  f'{square} should be {"dark" if expected_dark else "light"}')
+
+
+class PieceRenderingTest(unittest.TestCase):
+    """The chess code points can resolve to a colour-emoji font, which supplies
+    its own colours and ignores CSS — rendering both sides the same dark glyph.
+    Two things prevent it, and both must stay in the page."""
+
+    def setUp(self):
+        from pathlib import Path
+        self.page = (Path(__file__).resolve().parents[1] / 'public' / 'index.html').read_text()
+
+    def test_glyphs_request_text_presentation(self):
+        # U+FE0E after the code point asks for the monochrome form.
+        self.assertIn("+'\\uFE0E'", self.page,
+                      'piece glyphs must carry the text-presentation selector')
+        self.assertIn('font-variant-emoji:text', self.page)
+
+    def test_monochrome_fonts_come_before_the_default_stack(self):
+        import re
+        rule = re.search(r'\.sq \.p\{[^}]*\}', self.page, re.S)
+        self.assertIsNotNone(rule, 'piece font rule not found')
+        family = rule.group(0)
+        self.assertIn('font-family:', family)
+        first = family.split('font-family:')[1].split(',')[0]
+        self.assertNotIn('sans-serif', first,
+                         'a generic family first lets the browser pick an emoji font')
